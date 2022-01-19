@@ -1,0 +1,19 @@
+#
+# this is your module manifest and used by Titanium
+# during compilation, packaging, distribution, etc.
+#
+version: 1.0.0
+apiversion: 2
+architectures: arm64 x86_64
+mac: true
+description: ti.imageviewextension
+author: Your Name
+license: Specify your license
+copyright: Copyright (c) 2022 by Your Company
+
+# these should not be edited
+name: ti.imageviewextension
+moduleid: ti.imageviewextension
+guid: a89abb68-61e6-46e9-b0fa-215cb5f54a52
+platform: iphone
+minsdk: 10.0.0
