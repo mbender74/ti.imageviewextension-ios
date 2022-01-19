@@ -20,7 +20,7 @@ https://titaniumsdk.com/api/titanium/ui/imageview.html
 ## additional properties
 
 * `animated ` - BOOL true/false (the image is faded in when true when the imageView appears, as example when tableView row / listView item / scrollView childview will be visible in scrolling! When the imageView is no longer visible and "animateOnce" is false, the imageView will fadein on reappering again!)
-* `animatedOnce ` - BOOL true/false (the image is faded in when animated is true, but only on the first appearing - as example when image is in a scrollable view)
+* `animateOnce ` - BOOL true/false (the image is faded in when animated is true, but only on the first appearing - as example when image is in a scrollable view)
 
 * `calcMinMax ` - BOOL true/false (the will be resized to the max given dimensions)
 * `maxHeight ` - INTEGER (the will be resized to the max given dimension when "calcMinMax" is true)
