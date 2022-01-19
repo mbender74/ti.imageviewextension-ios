@@ -30,7 +30,7 @@ https://titaniumsdk.com/api/titanium/ui/imageview.html
 * `averageColorDone ` - BOOL true/false
 
 ## Events and Listeners
-* `averageColor ` - when eventlistener "averageColor" is added to the imageView, an event "averageColor" will return the average color of the imageView, event returns hex color value '#123456' - the event will also set a property "averageColorDone:true" to the imageView, so the calculation of averageColor is only done once (or it you manually set averageColorDone:false after the event, it is done again on next appearing of the imageView)
+* `averageColor ` - when eventlistener "averageColor" is added to the imageView, an event "averageColor" will return the average color of the imageView, event returns hex color value '#123456' - the event will also set a property "averageColorDone:true" to the imageView, so the calculation of averageColor is only done once (or if you manually set averageColorDone:false after the event, it is done again on next appearing of the imageView)
 
 
 ```js
