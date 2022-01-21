@@ -50,6 +50,7 @@ var imageView = Ti.UI.createImageView({
   height:260,
   width:Ti.UI.SIZE,
   averageColorDone:false,
+  animated:true,
   animateOnce:false,
   noTransparency:false,
   maxHeight:260,
