@@ -22,7 +22,7 @@ https://titaniumsdk.com/api/titanium/ui/imageview.html
 * `animated ` - BOOL true/false (the image is faded in when true when the imageView appears, as example when tableView row / listView item / scrollView childview will be visible in scrolling! When the imageView is no longer visible and "animateOnce" is false, the imageView will fadein on reappering again!)
 * `animateOnce ` - BOOL true/false (the image is faded in when animated is true, but only on the first appearing - as example when image is in a scrollable view)
 
-* `calcMinMax ` - BOOL true/false (the will be resized to the max given dimensions)
+* `calcMinMax ` - BOOL true/false (the will be resized to the max given dimensions, by maintaining the given image aspect ratio)
 * `maxHeight ` - INTEGER (the will be resized to the max given dimension when "calcMinMax" is true)
 * `maxWidth ` - INTEGER (the will be resized to the max given dimension when "calcMinMax" is true)
 * `noTransparency ` - BOOL true/false (the image will be rendered without transparency, transparency of image will be removed internally)
@@ -30,7 +30,7 @@ https://titaniumsdk.com/api/titanium/ui/imageview.html
 * `averageColorDone ` - BOOL true/false
 
 ## Events and Listeners
-* `averageColor ` - when eventlistener "averageColor" is added to the imageView, an event "averageColor" will return the average color of the imageView, event returns hex color value '#123456' - the event will also set a property "averageColorDone:true" to the imageView
+* `averageColor ` - when eventlistener "averageColor" is added to the imageView, an event "averageColor" will return the average color of the imageView, event returns hex color value '#123456' - the event will also set a property "averageColorDone:true" to the imageView, so the calculation of averageColor is only done once (or if you manually set averageColorDone:false after the event, it is done again on next appearing of the imageView)
 
 
 ```js
@@ -50,6 +50,7 @@ var imageView = Ti.UI.createImageView({
   height:260,
   width:Ti.UI.SIZE,
   averageColorDone:false,
+  animated:true,
   animateOnce:false,
   noTransparency:false,
   maxHeight:260,
