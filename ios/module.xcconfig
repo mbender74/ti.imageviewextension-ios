@@ -25,4 +25,5 @@
 //
 //
 // IMPORTANT NOTE: always use $(inherited) in your overrides
+TI_SYMBOL_MACROS = $(inherited) USE_TI_UIIMAGEVIEW
 // 

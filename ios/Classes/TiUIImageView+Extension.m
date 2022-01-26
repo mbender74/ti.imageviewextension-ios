@@ -25,10 +25,48 @@
 
 @end
 
-@class TiUIImageView;
-@class TiUIImageViewProxy;
 
 @implementation TiUIImageView (Extension)
+
+
+
+- (UIViewContentMode)contentModeForImageView
+{
+  int contentMode = [TiUtils intValue:[self.proxy valueForKey:@"scalingMode"] def:-1];
+  if (contentMode < 0) {
+    if (TiDimensionIsAuto(width) || TiDimensionIsAutoSize(width) || TiDimensionIsUndefined(width) || TiDimensionIsAuto(height) || TiDimensionIsAutoSize(height) || TiDimensionIsUndefined(height)) {
+      contentMode = UIViewContentModeScaleAspectFit;
+    } else {
+      contentMode = UIViewContentModeScaleToFill;
+    }
+  }
+  return contentMode;
+}
+
+
+- (UIImageView *)imageView
+{
+ if (imageView == nil) {
+    id backgroundColor = [self.proxy valueForUndefinedKey:@"backgroundColor"];
+     UIColor * backgroundColorValue = nil;
+     if (backgroundColor != nil) {
+         backgroundColorValue = [[TiUtils colorValue:backgroundColor] _color];
+     }
+   imageView = [[UIImageView alloc] initWithFrame:[self bounds]];
+   [imageView setAutoresizingMask:UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight];
+   [imageView setContentMode:[self contentModeForImageView]];
+   if (backgroundColorValue != nil) {
+        imageView.backgroundColor = backgroundColorValue;
+   }
+   imageView.opaque = YES;
+   imageView.layer.masksToBounds = true;
+   [self addSubview:imageView];
+ }
+ return imageView;
+}
+
+
+
 - (void)cancelPendingImageLoads
 {
   // cancel a pending request if we have one pending
@@ -126,6 +164,111 @@
  }
 }
 
+
+
+/*
+
+- (void)loadUrl:(NSURL *)img
+{
+  [self cancelPendingImageLoads];
+
+  if (img != nil) {
+    [self removeAllImagesFromContainer];
+
+    // NOTE: Loading from URL means we can't pre-determine any % value.
+    CGSize imageSize = CGSizeMake(TiDimensionCalculateValue(width, 0.0),
+        TiDimensionCalculateValue(height, 0.0));
+
+    if ([TiUtils boolValue:[[self proxy] valueForKey:@"hires"]]) {
+      imageSize.width *= 2;
+      imageSize.height *= 2;
+    }
+
+    // Skip the imageloader completely if this is obviously a file we can load off the fileystem.
+    // why were we ever doing that in the first place...?
+    if ([img isFileURL]) {
+      UIImage *image = nil;
+      NSString *pathStr = [img path];
+      NSRange range = [pathStr rangeOfString:@".app"];
+      NSString *imageArg = nil;
+      if (range.location != NSNotFound) {
+        if ([TiUtils isMacOS]) {
+          imageArg = [pathStr substringFromIndex:range.location + 24]; //Contents/Resources/ for mac
+        } else {
+          imageArg = [pathStr substringFromIndex:range.location + 5];
+        }
+      }
+
+      //remove suffixes.
+      imageArg = [imageArg stringByReplacingOccurrencesOfString:@"@3x" withString:@""];
+      imageArg = [imageArg stringByReplacingOccurrencesOfString:@"@2x" withString:@""];
+      imageArg = [imageArg stringByReplacingOccurrencesOfString:@"~iphone" withString:@""];
+      imageArg = [imageArg stringByReplacingOccurrencesOfString:@"~ipad" withString:@""];
+
+      if (imageArg!=nil) {
+        image = [UIImage imageNamed:imageArg];
+      }
+      else {
+        image = [UIImage imageWithContentsOfFile:[img path]];
+      }
+
+      if (image != nil) {
+        if ([TiUtils boolValue:[[self proxy] valueForKey:@"blurredImage"] def:NO]) {
+            image = [self blurredImageWithImage:image];
+        }
+        if ([TiUtils boolValue:[[self proxy] valueForKey:@"calcMinMax"] def:NO]) {
+            image = [self calcMinMax:image];
+        }
+        UIImage *imageToUse = [self rotatedImage:image];
+        autoWidth = imageToUse.size.width;
+        autoHeight = imageToUse.size.height;
+        [self setTintedImage:imageToUse];
+        [self fireLoadEventWithState:@"image"];
+      } else {
+        [self loadDefaultImage:imageSize];
+      }
+    
+      return;
+    }
+
+    UIImage *image = [[ImageLoader sharedLoader] loadImmediateImage:img];
+    if (image == nil) {
+      [self loadDefaultImage:imageSize];
+      placeholderLoading = YES;
+      [(TiUIImageViewProxy *)[self proxy] startImageLoad:img];
+      return;
+    }
+
+    if (image != nil) {
+        
+      if ([TiUtils boolValue:[[self proxy] valueForKey:@"blurredImage"] def:NO]) {
+            image = [self blurredImageWithImage:image];
+      }
+      if ([TiUtils boolValue:[[self proxy] valueForKey:@"calcMinMax"] def:NO]) {
+            image = [self calcMinMax:image];
+      }
+        
+      UIImage *imageToUse = [self rotatedImage:image];
+      [(TiUIImageViewProxy *)[self proxy] setImageURL:img];
+
+      autoWidth = imageToUse.size.width;
+      autoHeight = imageToUse.size.height;
+      if ([TiUtils boolValue:[[self proxy] valueForKey:@"hires"]]) {
+        autoWidth = autoWidth / 2;
+        autoHeight = autoHeight / 2;
+      }
+      [self setTintedImage:imageToUse];
+      [self fireLoadEventWithState:@"image"];
+    }
+  }
+}
+
+*/
+
+
+
+
+
 - (void)loadUrl:(NSURL *)img
 {
  [self cancelPendingImageLoads];
@@ -174,6 +317,7 @@
    }
  }
 }
+ 
 
 
 - (UIImage* )setBackgroundImageByColor:(UIColor *)backgroundColor withFrame:(CGRect )rect{
@@ -479,14 +623,11 @@
 
 
 
-
 - (void)setTintedImage:(UIImage *)image
 {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+   //     dispatch_async(dispatch_get_main_queue(), ^{
 
- 
-
-    
  UIImage *thisImage = image;
  id tintColor = [self.proxy valueForUndefinedKey:@"tintColor"];
  id backgroundColor = [self.proxy valueForUndefinedKey:@"backgroundColor"];
@@ -515,7 +656,7 @@
 
             self->imageView.alpha = 0.0;
             [self->imageView setImage:thisImage];
-                self->imageView.contentMode = self->imageView.contentMode;
+                self->imageView.contentMode = [self contentModeForImageView];
                 self->imageView.opaque = YES;
                 self->imageView.layer.masksToBounds = true;
             super.opaque = YES;
@@ -538,7 +679,7 @@
             dispatch_async(dispatch_get_main_queue(), ^{
 
             [self->imageView setImage:thisImage];
-                self->imageView.contentMode = self->imageView.contentMode;
+                self->imageView.contentMode = [self contentModeForImageView];
                 
                 self->imageView.opaque = YES;
                 self->imageView.layer.masksToBounds = true;
@@ -561,12 +702,13 @@
          if (tintColor != nil) {
              
              if ([TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO]){
+
                  dispatch_async(dispatch_get_main_queue(), ^{
 
                      self->imageView.alpha = 0.0;
                  [self->imageView setImage:[thisImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
                  [self->imageView setTintColor:[TiUtils colorValue:tintColor].color];
-                 self->imageView.contentMode = self->imageView.contentMode;
+                 self->imageView.contentMode = [self contentModeForImageView];
                   self->imageView.opaque = YES;
                   self->imageView.layer.masksToBounds = true;
                  super.opaque = YES;
@@ -596,7 +738,7 @@
 
                  [self->imageView setImage:[thisImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
                  [self->imageView setTintColor:[TiUtils colorValue:tintColor].color];
-                     self->imageView.contentMode = self->imageView.contentMode;
+                     self->imageView.contentMode = [self contentModeForImageView];
                      self->imageView.opaque = YES;
                      self->imageView.layer.masksToBounds = true;
                  super.opaque = YES;
@@ -608,9 +750,11 @@
                  if (backgroundColorValue != nil) {
                      self->imageView.backgroundColor = backgroundColorValue;
                  }
+                     
                      if ([TiUtils boolValue:[[self proxy] valueForUndefinedKey:@"shouldRasterize"] def:NO]) {
                          self->imageView.layer.shouldRasterize = YES;
                      }
+
                  });
              }
              
@@ -622,11 +766,12 @@
                    }
              }
              if ([TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO]){
+
                  dispatch_async(dispatch_get_main_queue(), ^{
 
                      self->imageView.alpha = 0.0;
                  [self->imageView setImage:thisImage];
-                     self->imageView.contentMode = self->imageView.contentMode;
+                     self->imageView.contentMode = [self contentModeForImageView];
                      self->imageView.opaque = YES;
                      self->imageView.layer.masksToBounds = true;
                  super.opaque = YES;
@@ -651,7 +796,7 @@
                  dispatch_async(dispatch_get_main_queue(), ^{
 
                  [self->imageView setImage:thisImage];
-                     self->imageView.contentMode = self->imageView.contentMode;
+                     self->imageView.contentMode = [self contentModeForImageView];
                      self->imageView.opaque = YES;
                      self->imageView.layer.masksToBounds = true;
 
@@ -662,13 +807,16 @@
                      if ([TiUtils boolValue:[[self proxy] valueForUndefinedKey:@"shouldRasterize"] def:NO]) {
                          self->imageView.layer.shouldRasterize = YES;
                      }
+                     
+                    
+
+                     
                  });
 
              }
 
          }
    }
-
 
     });
 }
@@ -692,6 +840,77 @@
   if (imageView != nil) {
     imageView.image = nil;
   }
+}
+
+- (UIImage *)convertToUIImage:(id)arg
+{
+ UIImage *image = nil;
+
+ if ([arg isKindOfClass:[TiBlob class]]) {
+   TiBlob *blob = (TiBlob *)arg;
+   image = [blob image];
+ } else if ([arg isKindOfClass:[TiFile class]]) {
+   TiFile *file = (TiFile *)arg;
+   NSURL *fileUrl = [NSURL fileURLWithPath:[file path]];
+   image = [[ImageLoader sharedLoader] loadImmediateImage:fileUrl];
+ } else if ([arg isKindOfClass:[UIImage class]]) {
+   // called within this class
+   image = (UIImage *)arg;
+ }
+
+ UIImage *imageToUse = [self rotatedImage:image];
+
+ if (imageToUse != nil) {
+   autoHeight = imageToUse.size.height;
+   autoWidth = imageToUse.size.width;
+ } else {
+   autoHeight = autoWidth = 0;
+ }
+ return imageToUse;
+}
+
+
+- (void)setImage_:(id)arg
+{
+ id currentImage = [self.proxy valueForUndefinedKey:@"image"];
+
+ UIImageView *imageview = [self imageView];
+
+ [self removeAllImagesFromContainer];
+ [self cancelPendingImageLoads];
+
+ if (arg == nil || arg == imageview.image || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
+   return;
+ }
+
+ UIImage *image = [self convertToUIImage:arg];
+    
+ if (image == nil) {
+   NSURL *imageURL = [[self proxy] sanitizeURL:arg];
+   if (![imageURL isKindOfClass:[NSURL class]]) {
+     [self throwException:@"invalid image type"
+                subreason:[NSString stringWithFormat:@"expected TiBlob, String, TiFile, was: %@", [arg class]]
+                 location:CODELOCATION];
+   }
+   [self loadUrl:imageURL];
+   return;
+ }
+ if ([TiUtils boolValue:[[self proxy] valueForKey:@"blurredImage"] def:NO]) {
+       image = [self blurredImageWithImage:image];
+ }
+ if ([TiUtils boolValue:[[self proxy] valueForKey:@"calcMinMax"] def:NO]) {
+       image = [self calcMinMax:image];
+ }
+
+   
+ //dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    [self setTintedImage:image];
+     [(TiViewProxy *)[self proxy] contentsWillChange]; // Have to resize the proxy view to fit new subview size, if necessary
+
+     if (currentImage != image) {
+       [self fireLoadEventWithState:@"image"];
+     }
+// });
 }
 
 - (void)getAverageColor:(UIImage *)image{
@@ -730,10 +949,11 @@ dispatch_async(dispatch_get_main_queue(), ^{
     
     
     NSDictionary *evt = [NSDictionary dictionaryWithObject:line_data forKey:@"color"];
-    [self.proxy fireEvent:@"averageColor" withObject:evt];
     [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
     [[self proxy] replaceValue:[NSString stringWithFormat:@"#%02lX%02lX%02lX", lroundf(red_ * 255.0), lroundf(green_ * 255.0), lroundf(blue_ * 255.0)] forKey:@"averageColor" notification:NO];
-   });
+    [self.proxy fireEvent:@"averageColor" withObject:evt];
+
+    });
 }
 
 @end

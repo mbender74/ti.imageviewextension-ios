@@ -10,9 +10,6 @@
 #import "TiUIImageViewProxy.h"
 #import <TitaniumKit/TiViewProxy.h>
 
-@class TiUIImageView;
-@class TiUIImageViewProxy;
-
 //
 // this is a re-implementation (sort of) of the UIImageView object used for
 // displaying animated images.  The UIImageView object sucks and is very
