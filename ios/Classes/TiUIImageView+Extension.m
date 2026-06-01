@@ -593,6 +593,37 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     return tintedImage;
 }
 
+// Color Blend Mode Tint (wie Photoshop "Farbe" - erhält Helligkeit, ändert nur Farbe)
+- (UIImage *)imageWithColorOverlay:(UIImage *)source withColor:(UIColor *)color
+{
+    if (!source || !color) {
+        return source;
+    }
+
+    CGSize size = source.size;
+    CGFloat scale = source.scale;
+
+    UIGraphicsBeginImageContextWithOptions(size, NO, scale);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+
+    // Originalbild zeichnen
+    [source drawInRect:CGRectMake(0, 0, size.width, size.height)];
+
+    // Farbe mit "Color" Blend Mode darüber (erhält Luminanz, ersetzt Hue/Saturation)
+    if (@available(iOS 10.0, *)) {
+        CGContextSetBlendMode(ctx, kCGBlendModeColor);
+    } else {
+        CGContextSetBlendMode(ctx, kCGBlendModeNormal);
+    }
+    CGContextSetFillColorWithColor(ctx, color.CGColor);
+    UIRectFill(CGRectMake(0, 0, size.width, size.height));
+
+    UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    return result;
+}
+
 -(UIImage*)scaleToSize:(CGSize)size withImage:(UIImage *)image
 {
     // Delegate zur zentralen Scaling-Methode
@@ -731,11 +762,10 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 - (void)_applyTintedImage:(UIImage *)image tintColor:(id)tintColor backgroundColor:(id)backgroundColor
     shouldRasterize:(BOOL)shouldRasterize animated:(BOOL)animated animateOnce:(BOOL)animateOnce
 {
-    // Tint Color anwenden (wie Titanium SDK: Farbtönung, nicht Silhouette!)
+    // Tint Color anwenden (Farb-Overlay mit Blend Mode, wie Photoshop "Farbe")
     if (tintColor != nil) {
         UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
-        // iOS 13+: imageWithTintColor:renderingMode: preserves original image with tint overlay
-        UIImage *tintedImage = [image imageWithTintColor:tintColorValue renderingMode:UIImageRenderingModeAlwaysOriginal];
+        UIImage *tintedImage = [self imageWithColorOverlay:image withColor:tintColorValue];
         [self->imageView setImage:tintedImage];
     }
     else {
