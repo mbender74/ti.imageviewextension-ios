@@ -36,7 +36,7 @@ static CIContext *sharedCIContext(void) {
 }
 
 // Shared ColorSpace für Image Manipulation (thread-safe, einmalig)
-static CGColorSpace *sharedRGBColorSpace(void) {
+static CGColorSpaceRef sharedRGBColorSpace(void) {
     static CGColorSpaceRef space = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
