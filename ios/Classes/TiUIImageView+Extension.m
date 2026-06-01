@@ -54,18 +54,6 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
-static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
-
-- (BOOL)calcMinMaxExecuted
-{
-    return [objc_getAssociatedObject(self, kCalcMinMaxExecutedKey) boolValue];
-}
-
-- (void)setCalcMinMaxExecuted:(BOOL)value
-{
-    objc_setAssociatedObject(self, kCalcMinMaxExecutedKey, @(value), OBJC_ASSOCIATION_ASSIGN);
-}
-
 - (UIViewContentMode)contentModeForImageView
 {
   int contentMode = [TiUtils intValue:[self.proxy valueForKey:@"scalingMode"] def:-1];
@@ -135,12 +123,6 @@ static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
         return image;
     }
 
-    // Double-execution verhindern: Wenn bereits ausgeführt, nicht nochmal berechnen
-    if ([self calcMinMaxExecuted]) {
-        return image;
-    }
-    [self setCalcMinMaxExecuted:YES];
-
     // Properties cachern
     id maxHeight = [self.proxy valueForKey:@"maxHeight"];
     id maxWidth = [self.proxy valueForKey:@"maxWidth"];
@@ -161,14 +143,12 @@ static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
     // calcMinMax Property auf NO setzen (für resets)
     [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMax" notification:NO];
 
-    // Event nur feuern wenn ratio != 1.0 (tatsächliche Skalierung erfolgt)
-    if (ratio != 1.0) {
-        NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
-                                            @(image.size.width * ratio), @"width",
-                                            @(image.size.height * ratio), @"height",
-                                            nil];
-        [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
-    }
+    // Event feuern mit den neuen Dimensionen
+    NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                        @(destImage.size.width), @"width",
+                                        @(destImage.size.height), @"height",
+                                        nil];
+    [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
 
     return destImage;
 }
@@ -595,12 +575,14 @@ static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
     id tintColor = [self.proxy valueForKey:@"tintColor"];
 
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
-    // Wichtig: averageColorDone prüfen BEVOR wir in den Main-Thread dispatch gehen,
-    // damit keine parallelen Aufrufe das Event doppelt feuern
+    // averageColorDone SOFORT setzen bevor die async Berechnung startet,
+    // um doppelte Aufrufe bei parallelen setImage calls zu verhindern
     BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
         if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
             calcAverage = YES;
+            // Sofort markieren – Event wird später gefeuert
+            [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
         }
     }
 
@@ -615,14 +597,7 @@ static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
                     shouldRasterize:shouldRasterize animated:animated animateOnce:animateOnce];
     } else {
         dispatch_async(dispatch_get_main_queue(), ^{
-            // Nochmal prüfen – zwischenzeitlich könnte averageColorDone gesetzt worden sein
-            BOOL stillCalcAverage = NO;
-            if ([self.proxy _hasListeners:@"averageColor"]) {
-                if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
-                    stillCalcAverage = YES;
-                }
-            }
-            if (stillCalcAverage) {
+            if (calcAverage) {
                 [self getAverageColor:image];
             }
             [self _applyTintedImage:image tintColor:tintColor backgroundColor:backgroundColor
@@ -715,9 +690,6 @@ static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
 - (void)setImage_:(id)arg
 {
  UIImageView *imageview = [self imageView];
-
- // calcMinMaxExecuted Flag zurücksetzen (für neues Image)
- [self setCalcMinMaxExecuted:NO];
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
@@ -816,7 +788,7 @@ static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
     };
 
    dispatch_async(dispatch_get_main_queue(), ^{
-        [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
+        // averageColorDone wurde bereits in setTintedImage: gesetzt
         [[self proxy] replaceValue:hexColor forKey:@"averageColor" notification:NO];
         [self.proxy fireEvent:@"averageColor" withObject:evt];
    });
