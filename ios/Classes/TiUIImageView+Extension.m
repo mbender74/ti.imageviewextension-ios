@@ -120,7 +120,7 @@ UIImage *_lastProcessedImage;
     return [self imageWithImage:image scaledToSize:size];
 }
 
-- (UIImage *)calcMinMax:(UIImage *)image
+- (UIImage *)calcMinMax:(UIImage *)image originalSize:(CGSize)originalSize
 {
     if (!image) {
         return image;
@@ -130,15 +130,15 @@ UIImage *_lastProcessedImage;
     id maxHeight = [self.proxy valueForKey:@"maxHeight"];
     id maxWidth = [self.proxy valueForKey:@"maxWidth"];
     if (maxHeight == nil || maxHeight == [NSNull null]){
-        maxHeight = @(image.size.height);
+        maxHeight = @(originalSize.height);
     }
     if (maxWidth == nil || maxWidth == [NSNull null]){
-        maxWidth = @(image.size.width);
+        maxWidth = @(originalSize.width);
     }
 
-    CGFloat ratio = ceilf(MIN([maxWidth floatValue] / image.size.width, [maxHeight floatValue] / image.size.height));
+    CGFloat ratio = MIN([maxWidth floatValue] / originalSize.width, [maxHeight floatValue] / originalSize.height);
 
-    CGSize size = CGSizeMake(ceilf(image.size.width * ratio), ceilf(image.size.height * ratio));
+    CGSize size = CGSizeMake(ceilf(originalSize.width * ratio), ceilf(originalSize.height * ratio));
 
     // Zentrale Scaling-Methode verwenden
     UIImage *destImage = [self imageWithImage:image scaledToSize:size];
@@ -146,7 +146,9 @@ UIImage *_lastProcessedImage;
     // calcMinMax Property auf NO setzen (für resets)
     [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMax" notification:NO];
 
-    // Event feuern mit den neuen Dimensionen
+    // Event feuern mit den Ziel-Dimensionen
+    NSLog(@"[TiUIImageView+Extension] calcMinMax: firing imageMinMax event width=%.1f height=%.1f (original=%.0fx%.0f, ratio=%.2f)",
+          destImage.size.width, destImage.size.height, originalSize.width, originalSize.height, ratio);
     NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                         @(destImage.size.width), @"width",
                                         @(destImage.size.height), @"height",
@@ -154,6 +156,12 @@ UIImage *_lastProcessedImage;
     [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
 
     return destImage;
+}
+
+// Backward compat für Aufrufe ohne originalSize
+- (UIImage *)calcMinMax:(UIImage *)image
+{
+    return [self calcMinMax:image originalSize:image.size];
 }
 
 - (UIImage *)rotatedImage:(UIImage *)originalImage
@@ -222,12 +230,13 @@ UIImage *_lastProcessedImage;
        // Image Processing asynchron im Background
        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
            UIImage *processedImage = image;
+           CGSize originalImageSize = image.size;
 
            if (hasBlur) {
                processedImage = [self blurredImageWithImage:processedImage];
            }
            if (hasCalcMinMax) {
-               processedImage = [self calcMinMax:processedImage];
+               processedImage = [self calcMinMax:processedImage originalSize:originalImageSize];
            }
            UIImage *imageToUse = [self rotatedImage:processedImage];
            [(TiUIImageViewProxy *)[self proxy] setImageURL:img];
@@ -572,9 +581,15 @@ UIImage *_lastProcessedImage;
 
     // Duplicate detection: Wenn dieses Image bereits verarbeitet wurde, überspringen
     if (_lastProcessedImage == image) {
+        NSLog(@"[TiUIImageView+Extension] SKIP setTintedImage: – duplicate image pointer %p", image);
         return;
     }
     _lastProcessedImage = image;
+
+    NSLog(@"[TiUIImageView+Extension] setTintedImage: CALLED image=%p avgColorDone=%@ calcMinMax=%@",
+          image,
+          [[self.proxy valueForKey:@"averageColorDone"] description],
+          [[self.proxy valueForKey:@"calcMinMax"] description]);
 
     // Properties cachieren (KVC-overhead reduzieren)
     BOOL animated = [TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO];
@@ -739,12 +754,13 @@ UIImage *_lastProcessedImage;
      // Image Processing asynchron im Background
      dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
          UIImage *processedImage = image;
+         CGSize originalImageSize = image.size;
 
          if (hasBlur) {
              processedImage = [self blurredImageWithImage:processedImage];
          }
          if (hasCalcMinMax) {
-             processedImage = [self calcMinMax:processedImage];
+             processedImage = [self calcMinMax:processedImage originalSize:originalImageSize];
          }
 
          if (hasNoTransparency) {
@@ -798,6 +814,7 @@ UIImage *_lastProcessedImage;
 
    dispatch_async(dispatch_get_main_queue(), ^{
         // averageColorDone wurde bereits in setTintedImage: gesetzt
+        NSLog(@"[TiUIImageView+Extension] getAverageColor: firing averageColor event hex=%@", hexColor);
         [[self proxy] replaceValue:hexColor forKey:@"averageColor" notification:NO];
         [self.proxy fireEvent:@"averageColor" withObject:evt];
    });
