@@ -54,6 +54,9 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
+// Track last processed image to prevent duplicate events
+UIImage *_lastProcessedImage;
+
 - (UIViewContentMode)contentModeForImageView
 {
   int contentMode = [TiUtils intValue:[self.proxy valueForKey:@"scalingMode"] def:-1];
@@ -567,6 +570,12 @@ static void releaseSharedColorSpace(void) {
         return;
     }
 
+    // Duplicate detection: Wenn dieses Image bereits verarbeitet wurde, überspringen
+    if (_lastProcessedImage == image) {
+        return;
+    }
+    _lastProcessedImage = image;
+
     // Properties cachieren (KVC-overhead reduzieren)
     BOOL animated = [TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO];
     BOOL animateOnce = [TiUtils boolValue:[self.proxy valueForKey:@"animateOnce"] def:NO];
@@ -575,8 +584,6 @@ static void releaseSharedColorSpace(void) {
     id tintColor = [self.proxy valueForKey:@"tintColor"];
 
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
-    // averageColorDone SOFORT setzen bevor die async Berechnung startet,
-    // um doppelte Aufrufe bei parallelen setImage calls zu verhindern
     BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
         if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
@@ -589,7 +596,6 @@ static void releaseSharedColorSpace(void) {
     // Main-thread dispatch guard: Synchron wenn schon auf main, async sonst
     BOOL onMainThread = [NSThread isMainThread];
     if (onMainThread) {
-        // Direkt ausführen – kein dispatch_overhead
         if (calcAverage) {
             [self getAverageColor:image];
         }
@@ -690,6 +696,9 @@ static void releaseSharedColorSpace(void) {
 - (void)setImage_:(id)arg
 {
  UIImageView *imageview = [self imageView];
+
+ // _lastProcessedImage zurücksetzen für neues Image
+ _lastProcessedImage = nil;
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
