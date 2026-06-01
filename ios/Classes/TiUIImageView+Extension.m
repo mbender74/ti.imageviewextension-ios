@@ -259,6 +259,12 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
        }
    }
 
+   // Event-Flags zurücksetzen (ERST NACH Early-Exit!)
+   [self setAverageColorFired:NO];
+   [self setImageMinMaxFired:NO];
+   [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
+   [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
+
    [self removeAllImagesFromContainer];
 
    // Properties cachern (KVC-overhead reduzieren)
@@ -773,10 +779,6 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 {
  UIImageView *imageview = [self imageView];
 
- // Event-Flags für diesen Image-Lade-Zyklus zurücksetzen
- [self setAverageColorFired:NO];
- [self setImageMinMaxFired:NO];
-
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
    return;
@@ -806,7 +808,9 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    return;
  }
 
- // Image hat sich geändert – Flags zurücksetzen für neue Berechnung
+ // Image hat sich geändert – Flags zurücksetzen für neue Berechnung (ERST NACH Early-Exit!)
+ [self setAverageColorFired:NO];
+ [self setImageMinMaxFired:NO];
  [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
  [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
 
