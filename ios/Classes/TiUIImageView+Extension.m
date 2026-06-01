@@ -765,8 +765,13 @@ static void releaseSharedColorSpace(void) {
    long blue_ = lroundf(blue * 255.0);
 
    NSMutableArray *line_data = @[@(red_), @(green_), @(blue_)].mutableCopy;
-    NSDictionary *evt = @{@"color": line_data};
     NSString *hexColor = [NSString stringWithFormat:@"#%02lx%02lx%02lx", (unsigned long)red_, (unsigned long)green_, (unsigned long)blue_];
+
+    // Event-Dictionary: averageColor (Hex) + color (RGB Array)
+    NSDictionary *evt = @{
+        @"averageColor": hexColor,
+        @"color": line_data
+    };
 
    dispatch_async(dispatch_get_main_queue(), ^{
         [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
