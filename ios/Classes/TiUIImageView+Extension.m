@@ -747,26 +747,29 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 {
  UIImageView *imageview = [self imageView];
 
- // Event-Flags zurücksetzen für neues Image
+ // Event-Flags für diesen Image-Lade-Zyklus zurücksetzen
  [self setAverageColorFired:NO];
  [self setImageMinMaxFired:NO];
- // calcMinMaxDone und averageColorDone auf dem Proxy zurücksetzen (Cell Reuse)
- [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
- [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
    return;
  }
- if ([arg isKindOfClass:[UIImage class]] && [arg isEqual:imageview.image]) {
-   return;
- }
- if ([arg isKindOfClass:[NSString class]] && imageview.image) {
-   id currentImage = [self.proxy valueForUndefinedKey:@"image"];
-   if ([arg isEqual:currentImage]) {
+ // Early-Exit: Wenn dasselbe String-Image – alle Flags bleiben erhalten (Cell Reuse Cache)
+ if ([arg isKindOfClass:[NSString class]]) {
+   NSString *currentImage = [self.proxy valueForKey:@"image"];
+   if ([arg isEqualToString:currentImage]) {
      return;
    }
  }
+ // Early-Exit: Wenn dasselbe UIImage-Object
+ if ([arg isKindOfClass:[UIImage class]] && [arg isEqual:imageview.image]) {
+   return;
+ }
+
+ // Image hat sich geändert – Flags zurücksetzen für neue Berechnung
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
 
  [self removeAllImagesFromContainer];
  [self cancelPendingImageLoads];
