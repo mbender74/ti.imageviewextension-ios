@@ -54,8 +54,13 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
+// Pro-Instanz Flags (für Cell Reuse)
 static const char *kAverageColorFiredKey = "kAverageColorFired";
 static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
+
+// Globale Flags (verhindert Events über alle Instanzen hinweg)
+static BOOL gAverageColorFired = NO;
+static BOOL gImageMinMaxFired = NO;
 
 - (BOOL)averageColorFired
 {
@@ -65,7 +70,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
 - (void)setAverageColorFired:(BOOL)value
 {
-    objc_setAssociatedObject(self, kAverageColorFiredKey, @(value), OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(self, kAverageColorFiredKey, @(value), OBJC_ASSOCIATION_COPY);
 }
 
 - (BOOL)imageMinMaxFired
@@ -76,7 +81,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
 - (void)setImageMinMaxFired:(BOOL)value
 {
-    objc_setAssociatedObject(self, kImageMinMaxFiredKey, @(value), OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(self, kImageMinMaxFiredKey, @(value), OBJC_ASSOCIATION_COPY);
 }
 
 - (UIViewContentMode)contentModeForImageView
@@ -148,10 +153,11 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
         return image;
     }
 
-    // Double-event prevention: Wenn bereits gefeuert, nicht nochmal feuern
-    if ([self imageMinMaxFired]) {
+    // Double-event prevention: Global UND pro-Instanz prüfen
+    if (gImageMinMaxFired || [self imageMinMaxFired]) {
         return image;
     }
+    gImageMinMaxFired = YES;
     [self setImageMinMaxFired:YES];
 
     // Properties cachern
@@ -607,10 +613,11 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
         return;
     }
 
-    NSLog(@"[TiUIImageView+Extension] setTintedImage: CALLED image=%p avgColorDone=%@ calcMinMax=%@ avgFired=%d minMaxFired=%d",
+    NSLog(@"[TiUIImageView+Extension] setTintedImage: CALLED self=%p image=%p avgColorDone=%@ calcMinMax=%@ avgFired=%d minMaxFired=%d",
+          self,
           image,
-          [[self.proxy valueForKey:@"averageColorDone"] description],
-          [[self.proxy valueForKey:@"calcMinMax"] description],
+          [self.proxy valueForUndefinedKey:@"averageColorDone"],
+          [self.proxy valueForKey:@"calcMinMax"],
           [self averageColorFired],
           [self imageMinMaxFired]);
 
@@ -625,13 +632,19 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
         if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
-            if (![self averageColorFired]) {
+            if (!gAverageColorFired && ![self averageColorFired]) {
                 calcAverage = YES;
+                // SOFORT globale UND pro-Instanz flags setzen – bevor dispatch_async
+                gAverageColorFired = YES;
                 [self setAverageColorFired:YES];
-                // Sofort markieren – Event wird später gefeuert
                 [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
             }
         }
+    }
+
+    // Flags SOFORT setzen für calcMinMax (synchron, nicht async)
+    if (![self imageMinMaxFired]) {
+        [self setImageMinMaxFired:YES];
     }
 
     // Main-thread dispatch guard: Synchron wenn schon auf main, async sonst
@@ -741,6 +754,9 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
  // Event-Flags zurücksetzen für neues Image
  [self setAverageColorFired:NO];
  [self setImageMinMaxFired:NO];
+ // Globale Flags zurücksetzen (für neue Image-Lade-Zyklen)
+ gAverageColorFired = NO;
+ gImageMinMaxFired = NO;
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
