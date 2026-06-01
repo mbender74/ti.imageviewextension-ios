@@ -755,10 +755,21 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
    return;
  }
- // Early-Exit: Wenn dasselbe String-Image – alle Flags bleiben erhalten (Cell Reuse Cache)
+
+ // Flags zurücksetzen für neue/änderung Berechnung
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
+
+ [self removeAllImagesFromContainer];
+ [self cancelPendingImageLoads];
+
+ // Early-Exit: Wenn derselbe String-Pfad wie im Proxy UND alle Berechnungen fertig – Cache verwenden (Cell Reuse)
  if ([arg isKindOfClass:[NSString class]]) {
    NSString *currentImage = [self.proxy valueForKey:@"image"];
-   if ([arg isEqualToString:currentImage]) {
+   BOOL calcMinMaxDone = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMaxDone"] def:NO];
+   BOOL averageColorDone = [TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES];
+   if ([arg isEqualToString:currentImage] && calcMinMaxDone && averageColorDone) {
+     NSLog(@"[TiUIImageView+Extension] setImage_: EARLY EXIT – Cache hit path=%@", arg);
      return;
    }
  }
@@ -766,13 +777,6 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
  if ([arg isKindOfClass:[UIImage class]] && [arg isEqual:imageview.image]) {
    return;
  }
-
- // Image hat sich geändert – Flags zurücksetzen für neue Berechnung
- [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
- [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
-
- [self removeAllImagesFromContainer];
- [self cancelPendingImageLoads];
 
  UIImage *image = [self convertToUIImage:arg];
 
