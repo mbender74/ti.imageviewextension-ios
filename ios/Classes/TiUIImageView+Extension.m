@@ -602,7 +602,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
     CGSize size = source.size;
     CGFloat scale = source.scale;
-    CGFloat opacity = 0.4; // 40% Farbschicht, 60% Originalbild
+    CGFloat opacity = 0.25; // 25% Farbschicht, 75% Originalbild
 
     UIGraphicsBeginImageContextWithOptions(size, NO, scale);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
