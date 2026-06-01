@@ -628,18 +628,19 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
     BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
-        if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
-            if (![self averageColorFired]) {
-                calcAverage = YES;
-                // SOFORT pro-Instanz flag setzen – bevor dispatch_async
-                [self setAverageColorFired:YES];
-                [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
-            }
+        BOOL averageColorDone = [TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES];
+        if (!averageColorDone && ![self averageColorFired]) {
+            calcAverage = YES;
+            // SOFORT pro-Instanz flag setzen – bevor dispatch_async
+            [self setAverageColorFired:YES];
+            [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
         }
     }
 
-    // Flags SOFORT setzen für calcMinMax (synchron, nicht async)
-    if (![self imageMinMaxFired]) {
+    // calcMinMax prüfen (wenn noch nicht berechnet)
+    BOOL calcMinMax = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO];
+    BOOL calcMinMaxDone = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMaxDone"] def:NO];
+    if (calcMinMax && !calcMinMaxDone && ![self imageMinMaxFired]) {
         [self setImageMinMaxFired:YES];
     }
 
@@ -756,13 +757,6 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    return;
  }
 
- // Flags zurücksetzen für neue/änderung Berechnung
- [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
- [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
-
- [self removeAllImagesFromContainer];
- [self cancelPendingImageLoads];
-
  // Early-Exit: Wenn derselbe String-Pfad wie im Proxy UND alle Berechnungen fertig – Cache verwenden (Cell Reuse)
  if ([arg isKindOfClass:[NSString class]]) {
    NSString *currentImage = [self.proxy valueForKey:@"image"];
@@ -777,6 +771,13 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
  if ([arg isKindOfClass:[UIImage class]] && [arg isEqual:imageview.image]) {
    return;
  }
+
+ // Image hat sich geändert – Flags zurücksetzen für neue Berechnung
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
+
+ [self removeAllImagesFromContainer];
+ [self cancelPendingImageLoads];
 
  UIImage *image = [self convertToUIImage:arg];
 
