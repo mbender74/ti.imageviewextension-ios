@@ -593,7 +593,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     return tintedImage;
 }
 
-// Color Blend Mode Tint (wie Photoshop "Farbe" - erhält Helligkeit, ändert nur Farbe)
+// Tint Image mit halbtransparentem Overlay (Bild bleibt sichtbar!)
 - (UIImage *)imageWithColorOverlay:(UIImage *)source withColor:(UIColor *)color
 {
     if (!source || !color) {
@@ -602,6 +602,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
     CGSize size = source.size;
     CGFloat scale = source.scale;
+    CGFloat opacity = 0.4; // 40% Farbschicht, 60% Originalbild
 
     UIGraphicsBeginImageContextWithOptions(size, NO, scale);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
@@ -609,14 +610,13 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     // Originalbild zeichnen
     [source drawInRect:CGRectMake(0, 0, size.width, size.height)];
 
-    // Farbe mit "Color" Blend Mode darüber (erhält Luminanz, ersetzt Hue/Saturation)
-    if (@available(iOS 10.0, *)) {
-        CGContextSetBlendMode(ctx, kCGBlendModeColor);
-    } else {
-        CGContextSetBlendMode(ctx, kCGBlendModeNormal);
+    // Farbe als halbtransparenten Overlay
+    CGFloat r, g, b, a;
+    if ([color getRed:&r green:&g blue:&b alpha:&a]) {
+        UIColor *overlayColor = [UIColor colorWithRed:r green:g blue:b alpha:opacity];
+        CGContextSetFillColorWithColor(ctx, overlayColor.CGColor);
+        UIRectFill(CGRectMake(0, 0, size.width, size.height));
     }
-    CGContextSetFillColorWithColor(ctx, color.CGColor);
-    UIRectFill(CGRectMake(0, 0, size.width, size.height));
 
     UIImage *result = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -717,7 +717,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     BOOL animateOnce = [TiUtils boolValue:[self.proxy valueForKey:@"animateOnce"] def:NO];
     BOOL shouldRasterize = [TiUtils boolValue:[self.proxy valueForKey:@"shouldRasterize"] def:NO];
     id backgroundColor = [self.proxy valueForKey:@"backgroundColor"];
-    id tintColor = [self.proxy valueForKey:@"tintColor"];
+    id tintColor = [self.proxy valueForKey:@"overlayColor"];
     CGFloat tintOpacity = [TiUtils floatValue:[self.proxy valueForKey:@"tintOpacity"] def:0.35f];
 
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
