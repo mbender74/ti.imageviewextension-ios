@@ -54,8 +54,30 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
-// Track last processed image to prevent duplicate events
-UIImage *_lastProcessedImage;
+static const char *kAverageColorFiredKey = "kAverageColorFired";
+static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
+
+- (BOOL)averageColorFired
+{
+    NSNumber *value = objc_getAssociatedObject(self, kAverageColorFiredKey);
+    return value ? value.boolValue : NO;
+}
+
+- (void)setAverageColorFired:(BOOL)value
+{
+    objc_setAssociatedObject(self, kAverageColorFiredKey, @(value), OBJC_ASSOCIATION_ASSIGN);
+}
+
+- (BOOL)imageMinMaxFired
+{
+    NSNumber *value = objc_getAssociatedObject(self, kImageMinMaxFiredKey);
+    return value ? value.boolValue : NO;
+}
+
+- (void)setImageMinMaxFired:(BOOL)value
+{
+    objc_setAssociatedObject(self, kImageMinMaxFiredKey, @(value), OBJC_ASSOCIATION_ASSIGN);
+}
 
 - (UIViewContentMode)contentModeForImageView
 {
@@ -125,6 +147,12 @@ UIImage *_lastProcessedImage;
     if (!image) {
         return image;
     }
+
+    // Double-event prevention: Wenn bereits gefeuert, nicht nochmal feuern
+    if ([self imageMinMaxFired]) {
+        return image;
+    }
+    [self setImageMinMaxFired:YES];
 
     // Properties cachern
     id maxHeight = [self.proxy valueForKey:@"maxHeight"];
@@ -579,17 +607,12 @@ UIImage *_lastProcessedImage;
         return;
     }
 
-    // Duplicate detection: Wenn dieses Image bereits verarbeitet wurde, überspringen
-    if (_lastProcessedImage == image) {
-        NSLog(@"[TiUIImageView+Extension] SKIP setTintedImage: – duplicate image pointer %p", image);
-        return;
-    }
-    _lastProcessedImage = image;
-
-    NSLog(@"[TiUIImageView+Extension] setTintedImage: CALLED image=%p avgColorDone=%@ calcMinMax=%@",
+    NSLog(@"[TiUIImageView+Extension] setTintedImage: CALLED image=%p avgColorDone=%@ calcMinMax=%@ avgFired=%d minMaxFired=%d",
           image,
           [[self.proxy valueForKey:@"averageColorDone"] description],
-          [[self.proxy valueForKey:@"calcMinMax"] description]);
+          [[self.proxy valueForKey:@"calcMinMax"] description],
+          [self averageColorFired],
+          [self imageMinMaxFired]);
 
     // Properties cachieren (KVC-overhead reduzieren)
     BOOL animated = [TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO];
@@ -602,9 +625,12 @@ UIImage *_lastProcessedImage;
     BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
         if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
-            calcAverage = YES;
-            // Sofort markieren – Event wird später gefeuert
-            [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
+            if (![self averageColorFired]) {
+                calcAverage = YES;
+                [self setAverageColorFired:YES];
+                // Sofort markieren – Event wird später gefeuert
+                [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
+            }
         }
     }
 
@@ -712,8 +738,9 @@ UIImage *_lastProcessedImage;
 {
  UIImageView *imageview = [self imageView];
 
- // _lastProcessedImage zurücksetzen für neues Image
- _lastProcessedImage = nil;
+ // Event-Flags zurücksetzen für neues Image
+ [self setAverageColorFired:NO];
+ [self setImageMinMaxFired:NO];
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
