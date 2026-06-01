@@ -53,6 +53,9 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
+// Ivar um imageMinMax Event Doppelungen zu verhindern
+BOOL calcMinMaxExecuted;
+
 - (UIViewContentMode)contentModeForImageView
 {
   int contentMode = [TiUtils intValue:[self.proxy valueForKey:@"scalingMode"] def:-1];
@@ -122,6 +125,12 @@ static void releaseSharedColorSpace(void) {
         return image;
     }
 
+    // Double-execution verhindern: Wenn bereits ausgeführt, nicht nochmal berechnen
+    if (calcMinMaxExecuted) {
+        return image;
+    }
+    calcMinMaxExecuted = YES;
+
     // Properties cachern
     id maxHeight = [self.proxy valueForKey:@"maxHeight"];
     id maxWidth = [self.proxy valueForKey:@"maxWidth"];
@@ -139,13 +148,17 @@ static void releaseSharedColorSpace(void) {
     // Zentrale Scaling-Methode verwenden
     UIImage *destImage = [self imageWithImage:image scaledToSize:size];
 
+    // calcMinMax Property auf NO setzen (für resets)
     [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMax" notification:NO];
 
-    NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
-                                        @(image.size.width * ratio), @"width",
-                                        @(image.size.height * ratio), @"height",
-                                        nil];
-    [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
+    // Event nur feuern wenn ratio != 1.0 (tatsächliche Skalierung erfolgt)
+    if (ratio != 1.0) {
+        NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                            @(image.size.width * ratio), @"width",
+                                            @(image.size.height * ratio), @"height",
+                                            nil];
+        [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
+    }
 
     return destImage;
 }
@@ -692,6 +705,9 @@ static void releaseSharedColorSpace(void) {
 - (void)setImage_:(id)arg
 {
  UIImageView *imageview = [self imageView];
+
+ // calcMinMaxExecuted Flag zurücksetzen (für neues Image)
+ calcMinMaxExecuted = NO;
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
