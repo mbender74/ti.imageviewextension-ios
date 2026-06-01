@@ -20,6 +20,7 @@
 #import <TitaniumKit/TiUtils.h>
 #import <TitaniumKit/TiViewProxy.h>
 #import <TitaniumKit/UIImage+Resize.h>
+#import <objc/runtime.h>
 
 // Magic Numbers als Konstanten
 static const CGFloat kFadeAnimationDuration = 0.5;
@@ -53,8 +54,17 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
-// Ivar um imageMinMax Event Doppelungen zu verhindern
-BOOL calcMinMaxExecuted;
+static const char *kCalcMinMaxExecutedKey = "kCalcMinMaxExecuted";
+
+- (BOOL)calcMinMaxExecuted
+{
+    return [objc_getAssociatedObject(self, kCalcMinMaxExecutedKey) boolValue];
+}
+
+- (void)setCalcMinMaxExecuted:(BOOL)value
+{
+    objc_setAssociatedObject(self, kCalcMinMaxExecutedKey, @(value), OBJC_ASSOCIATION_ASSIGN);
+}
 
 - (UIViewContentMode)contentModeForImageView
 {
@@ -126,10 +136,10 @@ BOOL calcMinMaxExecuted;
     }
 
     // Double-execution verhindern: Wenn bereits ausgeführt, nicht nochmal berechnen
-    if (calcMinMaxExecuted) {
+    if ([self calcMinMaxExecuted]) {
         return image;
     }
-    calcMinMaxExecuted = YES;
+    [self setCalcMinMaxExecuted:YES];
 
     // Properties cachern
     id maxHeight = [self.proxy valueForKey:@"maxHeight"];
@@ -707,7 +717,7 @@ BOOL calcMinMaxExecuted;
  UIImageView *imageview = [self imageView];
 
  // calcMinMaxExecuted Flag zurücksetzen (für neues Image)
- calcMinMaxExecuted = NO;
+ [self setCalcMinMaxExecuted:NO];
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
