@@ -571,10 +571,13 @@ static void releaseSharedColorSpace(void) {
     id backgroundColor = [self.proxy valueForKey:@"backgroundColor"];
     id tintColor = [self.proxy valueForKey:@"tintColor"];
 
-    // Average Color berechnen (wenn Listener vorhanden)
+    // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
+    // Wichtig: averageColorDone prüfen BEVOR wir in den Main-Thread dispatch gehen,
+    // damit keine parallelen Aufrufe das Event doppelt feuern
+    BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
         if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
-            [self getAverageColor:image];
+            calcAverage = YES;
         }
     }
 
@@ -582,10 +585,23 @@ static void releaseSharedColorSpace(void) {
     BOOL onMainThread = [NSThread isMainThread];
     if (onMainThread) {
         // Direkt ausführen – kein dispatch_overhead
+        if (calcAverage) {
+            [self getAverageColor:image];
+        }
         [self _applyTintedImage:image tintColor:tintColor backgroundColor:backgroundColor
                     shouldRasterize:shouldRasterize animated:animated animateOnce:animateOnce];
     } else {
         dispatch_async(dispatch_get_main_queue(), ^{
+            // Nochmal prüfen – zwischenzeitlich könnte averageColorDone gesetzt worden sein
+            BOOL stillCalcAverage = NO;
+            if ([self.proxy _hasListeners:@"averageColor"]) {
+                if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
+                    stillCalcAverage = YES;
+                }
+            }
+            if (stillCalcAverage) {
+                [self getAverageColor:image];
+            }
             [self _applyTintedImage:image tintColor:tintColor backgroundColor:backgroundColor
                         shouldRasterize:shouldRasterize animated:animated animateOnce:animateOnce];
         });
