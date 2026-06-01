@@ -173,9 +173,14 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     // Zentrale Scaling-Methode verwenden
     UIImage *destImage = [self imageWithImage:image scaledToSize:size];
 
-    // calcMinMax und calcMinMaxDone auf dem Proxy setzen (pro Cell/Instanz)
+    // calcMinMax und calcMinMaxDone auf dem Proxy setzen + Cache Properties (für Cell Reuse)
     [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMax" notification:NO];
     [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"calcMinMaxDone" notification:NO];
+    [[self proxy] replaceValue:[self.proxy valueForKey:@"blurredImage"] forKey:@"cachedBlurredImage" notification:NO];
+    [[self proxy] replaceValue:[self.proxy valueForKey:@"blurRadius"] forKey:@"cachedBlurRadius" notification:NO];
+    [[self proxy] replaceValue:[self.proxy valueForKey:@"calcMinMax"] forKey:@"cachedCalcMinMax" notification:NO];
+    [[self proxy] replaceValue:[self.proxy valueForKey:@"maxWidth"] forKey:@"cachedMaxWidth" notification:NO];
+    [[self proxy] replaceValue:[self.proxy valueForKey:@"maxHeight"] forKey:@"cachedMaxHeight" notification:NO];
 
     // Event feuern mit den Ziel-Dimensionen
     NSLog(@"[TiUIImageView+Extension] calcMinMax: firing imageMinMax event width=%.1f height=%.1f (original=%.0fx%.0f, ratio=%.2f)",
@@ -240,8 +245,17 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    if (calcMinMaxDone && averageColorDone) {
        NSString *currentImage = [self.proxy valueForKey:@"image"];
        if ([currentImage isKindOfClass:[NSString class]] && [currentImage isEqualToString:[img path]]) {
-           NSLog(@"[TiUIImageView+Extension] loadUrl: EARLY EXIT – Cache hit url=%@", [img path]);
-           return;
+           // Prüfen ob sich relevante Properties geändert haben
+           BOOL blurredImageChanged = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedBlurredImage"] def:NO];
+           BOOL blurRadiusChanged = [self.proxy valueForKey:@"blurRadius"] != [self.proxy valueForKey:@"cachedBlurRadius"];
+           BOOL calcMinMaxChanged = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedCalcMinMax"] def:NO];
+           BOOL maxWidthChanged = [self.proxy valueForKey:@"maxWidth"] != [self.proxy valueForKey:@"cachedMaxWidth"];
+           BOOL maxHeightChanged = [self.proxy valueForKey:@"maxHeight"] != [self.proxy valueForKey:@"cachedMaxHeight"];
+
+           if (!blurredImageChanged && !blurRadiusChanged && !calcMinMaxChanged && !maxWidthChanged && !maxHeightChanged) {
+               NSLog(@"[TiUIImageView+Extension] loadUrl: EARLY EXIT – Cache hit url=%@", [img path]);
+               return;
+           }
        }
    }
 
@@ -774,8 +788,17 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    BOOL calcMinMaxDone = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMaxDone"] def:NO];
    BOOL averageColorDone = [TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES];
    if ([arg isEqualToString:currentImage] && calcMinMaxDone && averageColorDone) {
-     NSLog(@"[TiUIImageView+Extension] setImage_: EARLY EXIT – Cache hit path=%@", arg);
-     return;
+       // Prüfen ob sich relevante Properties geändert haben (Blur, calcMinMax, maxWidth/Height)
+       BOOL blurredImageChanged = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedBlurredImage"] def:NO];
+       BOOL blurRadiusChanged = [self.proxy valueForKey:@"blurRadius"] != [self.proxy valueForKey:@"cachedBlurRadius"];
+       BOOL calcMinMaxChanged = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedCalcMinMax"] def:NO];
+       BOOL maxWidthChanged = [self.proxy valueForKey:@"maxWidth"] != [self.proxy valueForKey:@"cachedMaxWidth"];
+       BOOL maxHeightChanged = [self.proxy valueForKey:@"maxHeight"] != [self.proxy valueForKey:@"cachedMaxHeight"];
+
+       if (!blurredImageChanged && !blurRadiusChanged && !calcMinMaxChanged && !maxWidthChanged && !maxHeightChanged) {
+           NSLog(@"[TiUIImageView+Extension] setImage_: EARLY EXIT – Cache hit path=%@", arg);
+           return;
+       }
    }
  }
  // Early-Exit: Wenn dasselbe UIImage-Object
@@ -874,6 +897,9 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
         // averageColorDone wurde bereits in setTintedImage: gesetzt
         NSLog(@"[TiUIImageView+Extension] getAverageColor: firing averageColor event hex=%@", hexColor);
         [[self proxy] replaceValue:hexColor forKey:@"averageColor" notification:NO];
+        // Cache Properties für Cell Reuse (wenn sich Properties ändern, wird neu berechnet)
+        [[self proxy] replaceValue:[self.proxy valueForKey:@"blurredImage"] forKey:@"cachedBlurredImage" notification:NO];
+        [[self proxy] replaceValue:[self.proxy valueForKey:@"blurRadius"] forKey:@"cachedBlurRadius" notification:NO];
         [self.proxy fireEvent:@"averageColor" withObject:evt];
    });
 }
