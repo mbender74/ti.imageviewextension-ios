@@ -54,13 +54,9 @@ static void releaseSharedColorSpace(void) {
 
 @implementation TiUIImageView (Extension)
 
-// Pro-Instanz Flags (für Cell Reuse)
+// Pro-Instanz Flags für Event-Duplikate innerhalb desselben Image-Lade-Zyklus
 static const char *kAverageColorFiredKey = "kAverageColorFired";
 static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
-
-// Globale Flags (verhindert Events über alle Instanzen hinweg)
-static BOOL gAverageColorFired = NO;
-static BOOL gImageMinMaxFired = NO;
 
 - (BOOL)averageColorFired
 {
@@ -153,11 +149,11 @@ static BOOL gImageMinMaxFired = NO;
         return image;
     }
 
-    // Double-event prevention: Global UND pro-Instanz prüfen
-    if (gImageMinMaxFired || [self imageMinMaxFired]) {
+    // Double-event prevention: calcMinMaxDone vom Proxy prüfen (pro Cell/Instanz)
+    BOOL calcMinMaxDone = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMaxDone"] def:NO];
+    if (calcMinMaxDone || [self imageMinMaxFired]) {
         return image;
     }
-    gImageMinMaxFired = YES;
     [self setImageMinMaxFired:YES];
 
     // Properties cachern
@@ -177,8 +173,9 @@ static BOOL gImageMinMaxFired = NO;
     // Zentrale Scaling-Methode verwenden
     UIImage *destImage = [self imageWithImage:image scaledToSize:size];
 
-    // calcMinMax Property auf NO setzen (für resets)
+    // calcMinMax und calcMinMaxDone auf dem Proxy setzen (pro Cell/Instanz)
     [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMax" notification:NO];
+    [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"calcMinMaxDone" notification:NO];
 
     // Event feuern mit den Ziel-Dimensionen
     NSLog(@"[TiUIImageView+Extension] calcMinMax: firing imageMinMax event width=%.1f height=%.1f (original=%.0fx%.0f, ratio=%.2f)",
@@ -632,10 +629,9 @@ static BOOL gImageMinMaxFired = NO;
     BOOL calcAverage = NO;
     if ([self.proxy _hasListeners:@"averageColor"]) {
         if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
-            if (!gAverageColorFired && ![self averageColorFired]) {
+            if (![self averageColorFired]) {
                 calcAverage = YES;
-                // SOFORT globale UND pro-Instanz flags setzen – bevor dispatch_async
-                gAverageColorFired = YES;
+                // SOFORT pro-Instanz flag setzen – bevor dispatch_async
                 [self setAverageColorFired:YES];
                 [[self proxy] replaceValue:NUMBOOL(YES) forKey:@"averageColorDone" notification:NO];
             }
@@ -754,9 +750,9 @@ static BOOL gImageMinMaxFired = NO;
  // Event-Flags zurücksetzen für neues Image
  [self setAverageColorFired:NO];
  [self setImageMinMaxFired:NO];
- // Globale Flags zurücksetzen (für neue Image-Lade-Zyklen)
- gAverageColorFired = NO;
- gImageMinMaxFired = NO;
+ // calcMinMaxDone und averageColorDone auf dem Proxy zurücksetzen (Cell Reuse)
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMaxDone" notification:NO];
+ [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"averageColorDone" notification:NO];
 
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
