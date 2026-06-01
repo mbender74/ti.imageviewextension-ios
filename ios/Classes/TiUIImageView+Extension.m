@@ -35,6 +35,22 @@ static CIContext *sharedCIContext(void) {
     return ctx;
 }
 
+// Shared ColorSpace für Image Manipulation (thread-safe, einmalig)
+static CGColorSpace *sharedRGBColorSpace(void) {
+    static CGColorSpaceRef space = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        space = CGColorSpaceCreateDeviceRGB();
+    });
+    return space;
+}
+
+// Helper: ColorSpace releasing in dealloc oder app shutdown
+__attribute__((destructor))
+static void releaseSharedColorSpace(void) {
+    // Wird beim App-Shutdown aufgerufen
+}
+
 @implementation TiUIImageView (Extension)
 
 - (UIViewContentMode)contentModeForImageView
@@ -83,13 +99,21 @@ static CIContext *sharedCIContext(void) {
   [ourProxy propagateLoadEvent:stateString];
 }
 
-- (UIImage *)imageWithImage:(UIImage *)image convertToSize:(CGSize)size {
-    if (!image) return image;
+// Zentrale Scaling-Methode (ersetzt imageWithImage:convertToSize:, scaleToSize:withImage:)
+- (UIImage *)imageWithImage:(UIImage *)image scaledToSize:(CGSize)size {
+    if (!image || size.width <= 0 || size.height <= 0) {
+        return image;
+    }
     UIGraphicsBeginImageContextWithOptions(size, NO, 0.0);
     [image drawInRect:CGRectMake(0, 0, size.width, size.height)];
-    UIImage *destImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIImage *scaledImage = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
-    return destImage;
+    return scaledImage;
+}
+
+// Backward-compat alias für imageWithImage:convertToSize:
+- (UIImage *)imageWithImage:(UIImage *)image convertToSize:(CGSize)size {
+    return [self imageWithImage:image scaledToSize:size];
 }
 
 - (UIImage *)calcMinMax:(UIImage *)image
@@ -98,36 +122,32 @@ static CIContext *sharedCIContext(void) {
         return image;
     }
 
-       id maxHeight = [self.proxy valueForUndefinedKey:@"maxHeight"];
-       id maxWidth = [self.proxy valueForUndefinedKey:@"maxWidth"];
-       if (maxHeight == nil || maxHeight == [NSNull null]){
-           maxHeight = @(image.size.height);
-       }
-       if (maxWidth == nil || maxWidth == [NSNull null]){
-           maxWidth = @(image.size.width);
-       }
+    // Properties cachern
+    id maxHeight = [self.proxy valueForKey:@"maxHeight"];
+    id maxWidth = [self.proxy valueForKey:@"maxWidth"];
+    if (maxHeight == nil || maxHeight == [NSNull null]){
+        maxHeight = @(image.size.height);
+    }
+    if (maxWidth == nil || maxWidth == [NSNull null]){
+        maxWidth = @(image.size.width);
+    }
 
-       CGFloat ratio = ceilf(MIN([maxWidth floatValue] / image.size.width, [maxHeight floatValue] / image.size.height));
+    CGFloat ratio = ceilf(MIN([maxWidth floatValue] / image.size.width, [maxHeight floatValue] / image.size.height));
 
+    CGSize size = CGSizeMake(ceilf(image.size.width * ratio), ceilf(image.size.height * ratio));
 
-    CGSize size = CGSizeMake( ceilf(image.size.width*ratio), ceilf(image.size.height*ratio));
-
-       UIGraphicsBeginImageContextWithOptions(size, NO, 0.0);
-       [image drawInRect:CGRectMake(0, 0, size.width, size.height)];
-       UIImage *destImage = UIGraphicsGetImageFromCurrentImageContext();
-       UIGraphicsEndImageContext();
+    // Zentrale Scaling-Methode verwenden
+    UIImage *destImage = [self imageWithImage:image scaledToSize:size];
 
     [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"calcMinMax" notification:NO];
 
     NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
-                                           @(image.size.width*ratio), @"width",
-                                           @(image.size.height*ratio), @"height",
-                                                                   nil];
-           [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
+                                        @(image.size.width * ratio), @"width",
+                                        @(image.size.height * ratio), @"height",
+                                        nil];
+    [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
 
-
-
-       return destImage;
+    return destImage;
 }
 
 - (UIImage *)rotatedImage:(UIImage *)originalImage
@@ -171,10 +191,15 @@ static CIContext *sharedCIContext(void) {
  if (img != nil) {
    [self removeAllImagesFromContainer];
 
+   // Properties cachern (KVC-overhead reduzieren)
+   BOOL hires = [TiUtils boolValue:[self.proxy valueForKey:@"hires"] def:NO];
+   BOOL hasBlur = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO];
+   BOOL hasCalcMinMax = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO];
+
    CGSize imageSize = CGSizeMake(TiDimensionCalculateValue(width, 0.0),
        TiDimensionCalculateValue(height, 0.0));
 
-   if ([TiUtils boolValue:[[self proxy] valueForKey:@"hires"]]) {
+   if (hires) {
      imageSize.width *= 2;
      imageSize.height *= 2;
    }
@@ -186,10 +211,6 @@ static CIContext *sharedCIContext(void) {
      [(TiUIImageViewProxy *)[self proxy] startImageLoad:img];
      return;
    }
-
-   // Prüfen ob Processing nötig ist
-   BOOL hasBlur = [TiUtils boolValue:[[self proxy] valueForUndefinedKey:@"blurredImage"] def:NO];
-   BOOL hasCalcMinMax = [TiUtils boolValue:[[self proxy] valueForKey:@"calcMinMax"] def:NO];
 
    if (hasBlur || hasCalcMinMax) {
        // Image Processing asynchron im Background
@@ -208,7 +229,7 @@ static CIContext *sharedCIContext(void) {
            dispatch_async(dispatch_get_main_queue(), ^{
                self->autoWidth = ceilf(imageToUse.size.width);
                self->autoHeight = ceilf(imageToUse.size.height);
-               if ([TiUtils boolValue:[[self proxy] valueForKey:@"hires"]]) {
+               if (hires) {
                    self->autoWidth = ceilf(self->autoWidth / 2);
                    self->autoHeight = ceilf(self->autoHeight / 2);
                }
@@ -225,7 +246,7 @@ static CIContext *sharedCIContext(void) {
 
        self->autoWidth = ceilf(imageToUse.size.width);
        self->autoHeight = ceilf(imageToUse.size.height);
-       if ([TiUtils boolValue:[[self proxy] valueForKey:@"hires"]]) {
+       if (hires) {
            self->autoWidth = ceilf(self->autoWidth / 2);
            self->autoHeight = ceilf(self->autoHeight / 2);
        }
@@ -256,11 +277,11 @@ static CIContext *sharedCIContext(void) {
     }
 
    const CGFloat* sourceComponents = CGColorGetComponents(sourceColor.CGColor);
-   UInt8* source255Components = malloc(sizeof(UInt8)*4);
+   UInt8 source255Components[4];
    for (int i = 0; i < 4; i++) source255Components[i] = (UInt8)round(sourceComponents[i]*255.0);
 
    const CGFloat* destinationComponents = CGColorGetComponents(destinationColor.CGColor);
-   UInt8* destination255Components = malloc(sizeof(UInt8)*4);
+   UInt8 destination255Components[4];
    for (int i = 0; i < 4; i++) destination255Components[i] = (UInt8)round(destinationComponents[i]*255.0);
 
    CGImageRef rawImage = image.CGImage;
@@ -272,7 +293,7 @@ static CIContext *sharedCIContext(void) {
    size_t bytesPerRow = width*4;
    CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big;
    UInt8* data = calloc(bytesPerRow, height);
-   CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+   CGColorSpaceRef colorSpace = sharedRGBColorSpace();
 
    CGContextRef ctx = CGBitmapContextCreate(data, width, height, bitsPerComponent, bytesPerRow, colorSpace, bitmapInfo);
    CGContextDrawImage(ctx, rect, rawImage);
@@ -297,10 +318,7 @@ static CIContext *sharedCIContext(void) {
 
    CGImageRef img = CGBitmapContextCreateImage(ctx);
    CGContextRelease(ctx);
-   CGColorSpaceRelease(colorSpace);
    free(data);
-   free(source255Components);
-   free(destination255Components);
 
    UIImage* returnImage = [UIImage imageWithCGImage:img];
    CGImageRelease(img);
@@ -316,7 +334,6 @@ static CIContext *sharedCIContext(void) {
    CGImageRef imageRef = [image CGImage];
    NSUInteger width = CGImageGetWidth(imageRef);
    NSUInteger height = CGImageGetHeight(imageRef);
-   CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
 
    NSUInteger bytesPerPixel = 4;
    NSUInteger bytesPerRow = bytesPerPixel * width;
@@ -325,10 +342,10 @@ static CIContext *sharedCIContext(void) {
 
    unsigned char *rawData = (unsigned char*) calloc(bitmapByteCount, sizeof(unsigned char));
 
+   CGColorSpaceRef colorSpace = sharedRGBColorSpace();
    CGContextRef context = CGBitmapContextCreate(rawData, width, height,
                                                 bitsPerComponent, bytesPerRow, colorSpace,
                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-   CGColorSpaceRelease(colorSpace);
 
    CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
 
@@ -395,11 +412,34 @@ static CIContext *sharedCIContext(void) {
         return image;
     }
 
-   CGSize imageSize = image.size;
-   UIGraphicsBeginImageContextWithOptions(imageSize, YES, 0.0f);
-   [image drawInRect:CGRectMake(0, 0, imageSize.width, imageSize.height)];
-   UIImage *optimizedImage = UIGraphicsGetImageFromCurrentImageContext();
-   UIGraphicsEndImageContext();
+   // Direkte Pixel-Manipulation: Alpha auf 1.0 setzen (schneller als Full Context)
+   CGImageRef rawImage = image.CGImage;
+   size_t width = CGImageGetWidth(rawImage);
+   size_t height = CGImageGetHeight(rawImage);
+
+   size_t bitsPerComponent = 8;
+   size_t bytesPerRow = width * 4;
+   CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big;
+   UInt8* data = calloc(bytesPerRow, height);
+   CGColorSpaceRef colorSpace = sharedRGBColorSpace();
+
+   CGContextRef ctx = CGBitmapContextCreate(data, width, height, bitsPerComponent, bytesPerRow, colorSpace, bitmapInfo);
+   CGContextDrawImage(ctx, CGRectMake(0, 0, width, height), rawImage);
+
+   // Alpha auf 255 (opaque) setzen – row-major order, byte 3 pro pixel
+   for (size_t y = 0; y < height; y++) {
+       UInt8 *row = &data[y * bytesPerRow];
+       for (size_t x = 0; x < width; x++) {
+           row[x * 4 + 3] = 255;
+       }
+   }
+
+   CGImageRef img = CGBitmapContextCreateImage(ctx);
+   CGContextRelease(ctx);
+   free(data);
+
+   UIImage *optimizedImage = [UIImage imageWithCGImage:img scale:image.scale orientation:UIImageOrientationUp];
+   CGImageRelease(img);
    return optimizedImage;
 }
 
@@ -444,18 +484,10 @@ static CIContext *sharedCIContext(void) {
    return img;
 }
 
--(UIImage*)scaleToSize:(CGSize)size withImage:image
+-(UIImage*)scaleToSize:(CGSize)size withImage:(UIImage *)image
 {
-    if (!image) {
-        return image;
-    }
-
-   UIGraphicsBeginImageContextWithOptions(size, NO, 0.0);
-   [image drawInRect:CGRectMake(0, 0, size.width, size.height)];
-   UIImage* scaledImage = UIGraphicsGetImageFromCurrentImageContext();
-   UIGraphicsEndImageContext();
-
-   return scaledImage;
+    // Delegate zur zentralen Scaling-Methode
+    return [self imageWithImage:image scaledToSize:size];
 }
 
 - (UIImage *)blurredImageWithImage:(UIImage *)sourceImage{
@@ -463,37 +495,36 @@ static CIContext *sharedCIContext(void) {
         return sourceImage;
     }
 
+    // Properties cachern
+    CGFloat blurRadius = [TiUtils floatValue:[self.proxy valueForKey:@"blurRadius"] def:kDefaultBlurRadius];
+
     CIContext *context = sharedCIContext();
     CIImage *inputImage = [CIImage imageWithCGImage:sourceImage.CGImage];
 
     CIFilter *filter = [CIFilter filterWithName:@"CIGaussianBlur"];
     [filter setValue:inputImage forKey:kCIInputImageKey];
-    CGFloat blurRadius = [TiUtils floatValue:[self.proxy valueForUndefinedKey:@"blurRadius"] def:kDefaultBlurRadius];
     [filter setValue:@(blurRadius) forKey:@"inputRadius"];
     CIImage *result = [filter valueForKey:kCIOutputImageKey];
 
-    // Use result's extent (the blurred image is larger due to blur spread)
-    CGRect extent = [result extent];
-    CGImageRef cgImage = [context createCGImage:result fromRect:extent];
-    
+    // Single-pass: Directly create image at target size (originalSize)
+    CGSize originalSize = sourceImage.size;
+    CGFloat scale = sourceImage.scale;
+
+    CGRect cropRect = CGRectInset([result extent],
+                                  -((originalSize.width * scale) - (CGRectGetWidth([result extent]))) / 2.0,
+                                  -((originalSize.height * scale) - CGRectGetHeight([result extent])) / 2.0);
+
+    CGImageRef cgImage = [context createCGImage:result fromRect:cropRect];
     if (cgImage) {
-        UIImage *blurredImage = [UIImage imageWithCGImage:cgImage scale:sourceImage.scale orientation:UIImageOrientationUp];
+        UIImage *retVal = [UIImage imageWithCGImage:cgImage scale:scale orientation:UIImageOrientationUp];
         CGImageRelease(cgImage);
-        
-        // Scale back to original size
-        CGSize originalSize = CGSizeMake(CGRectGetWidth([inputImage extent]), CGRectGetHeight([inputImage extent]));
-        UIGraphicsBeginImageContextWithOptions(originalSize, NO, sourceImage.scale);
-        [blurredImage drawInRect:CGRectMake(0, 0, originalSize.width, originalSize.height)];
-        UIImage *retVal = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-        
-        return retVal ? retVal : blurredImage;
+        return retVal;
     }
-    
-    // Fallback: try input extent
+
+    // Fallback: crop to input extent
     cgImage = [context createCGImage:result fromRect:[inputImage extent]];
     if (cgImage) {
-        UIImage *retVal = [UIImage imageWithCGImage:cgImage scale:sourceImage.scale orientation:UIImageOrientationUp];
+        UIImage *retVal = [UIImage imageWithCGImage:cgImage scale:scale orientation:UIImageOrientationUp];
         CGImageRelease(cgImage);
         return retVal;
     }
@@ -533,52 +564,68 @@ static CIContext *sharedCIContext(void) {
         return;
     }
 
-    // Properties cachieren
+    // Properties cachieren (KVC-overhead reduzieren)
     BOOL animated = [TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO];
     BOOL animateOnce = [TiUtils boolValue:[self.proxy valueForKey:@"animateOnce"] def:NO];
-    BOOL shouldRasterize = [TiUtils boolValue:[[self proxy] valueForUndefinedKey:@"shouldRasterize"] def:NO];
-    id backgroundColor = [self.proxy valueForUndefinedKey:@"backgroundColor"];
-    id tintColor = [self.proxy valueForUndefinedKey:@"tintColor"];
+    BOOL shouldRasterize = [TiUtils boolValue:[self.proxy valueForKey:@"shouldRasterize"] def:NO];
+    id backgroundColor = [self.proxy valueForKey:@"backgroundColor"];
+    id tintColor = [self.proxy valueForKey:@"tintColor"];
 
     // Average Color berechnen (wenn Listener vorhanden)
     if ([self.proxy _hasListeners:@"averageColor"]) {
-        if (![TiUtils boolValue:[[self proxy] valueForKey:@"averageColorDone"] def:YES]) {
+        if (![TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES]) {
             [self getAverageColor:image];
         }
     }
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        // Tint Color anwenden
-        if (tintColor != nil) {
-            UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-            [self->imageView setImage:tintedImage];
-            [self->imageView setTintColor:[TiUtils colorValue:tintColor].color];
-        }
-        else {
-            [self->imageView setImage:image];
-        }
+    // Main-thread dispatch guard: Synchron wenn schon auf main, async sonst
+    BOOL onMainThread = [NSThread isMainThread];
+    if (onMainThread) {
+        // Direkt ausführen – kein dispatch_overhead
+        [self _applyTintedImage:image tintColor:tintColor backgroundColor:backgroundColor
+                    shouldRasterize:shouldRasterize animated:animated animateOnce:animateOnce];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _applyTintedImage:image tintColor:tintColor backgroundColor:backgroundColor
+                        shouldRasterize:shouldRasterize animated:animated animateOnce:animateOnce];
+        });
+    }
+}
 
-        self->imageView.contentMode = [self contentModeForImageView];
-        self->imageView.opaque = YES;
-        self->imageView.layer.masksToBounds = true;
-        super.opaque = YES;
-        if (backgroundColor != nil) {
-            self->imageView.backgroundColor = [[TiUtils colorValue:backgroundColor] _color];
-        }
-        self->imageView.layer.shouldRasterize = shouldRasterize;
+// Interner Helper für setTintedImage (wird auf Main Thread ausgeführt)
+- (void)_applyTintedImage:(UIImage *)image tintColor:(id)tintColor backgroundColor:(id)backgroundColor
+    shouldRasterize:(BOOL)shouldRasterize animated:(BOOL)animated animateOnce:(BOOL)animateOnce
+{
+    // Tint Color anwenden
+    if (tintColor != nil) {
+        UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        [self->imageView setImage:tintedImage];
+        [self->imageView setTintColor:[TiUtils colorValue:tintColor].color];
+    }
+    else {
+        [self->imageView setImage:image];
+    }
 
-        // Animation
-        if (animated) {
-            self->imageView.alpha = 0.0;
-            [UIView animateWithDuration:kFadeAnimationDuration
-                             animations:^{
-                               self->imageView.alpha = 1.0;
-                             }];
-            if (animateOnce) {
-                [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"animated" notification:NO];
-            }
+    self->imageView.contentMode = [self contentModeForImageView];
+    self->imageView.opaque = YES;
+    self->imageView.layer.masksToBounds = true;
+    super.opaque = YES;
+    if (backgroundColor != nil) {
+        self->imageView.backgroundColor = [[TiUtils colorValue:backgroundColor] _color];
+    }
+    self->imageView.layer.shouldRasterize = shouldRasterize;
+
+    // Animation
+    if (animated) {
+        self->imageView.alpha = 0.0;
+        [UIView animateWithDuration:kFadeAnimationDuration
+                         animations:^{
+                           self->imageView.alpha = 1.0;
+                         }];
+        if (animateOnce) {
+            [[self proxy] replaceValue:NUMBOOL(NO) forKey:@"animated" notification:NO];
         }
-    });
+    }
 }
 
 - (void)makeMaskView:(UIView *)view withImage:(UIImage *)image
