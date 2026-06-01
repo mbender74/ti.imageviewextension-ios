@@ -234,6 +234,17 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
  [self cancelPendingImageLoads];
 
  if (img != nil) {
+   // Early-Exit: Wenn gleiche URL UND alle Berechnungen fertig – Cache verwenden (Cell Reuse)
+   BOOL calcMinMaxDone = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMaxDone"] def:NO];
+   BOOL averageColorDone = [TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES];
+   if (calcMinMaxDone && averageColorDone) {
+       NSString *currentImage = [self.proxy valueForKey:@"image"];
+       if ([currentImage isKindOfClass:[NSString class]] && [currentImage isEqualToString:[img path]]) {
+           NSLog(@"[TiUIImageView+Extension] loadUrl: EARLY EXIT – Cache hit url=%@", [img path]);
+           return;
+       }
+   }
+
    [self removeAllImagesFromContainer];
 
    // Properties cachern (KVC-overhead reduzieren)
