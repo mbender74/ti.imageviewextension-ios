@@ -561,6 +561,38 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    return img;
 }
 
+// Tint Image mit Opacity (Farbschicht über Originalbild, nicht Silhouette!)
+- (UIImage *)imageWithTint:(UIColor *)tintColor withImage:(UIImage *)image opacity:(CGFloat)opacity
+{
+    if (!image || !tintColor) {
+        return image;
+    }
+
+    // Clamp opacity to 0.01 - 0.95 range
+    CGFloat alpha = MAX(0.01, MIN(0.95, opacity));
+
+    CGRect aRect = CGRectMake(0.f, 0.f, image.size.width, image.size.height);
+
+    UIGraphicsBeginImageContextWithOptions(aRect.size, NO, image.scale);
+    CGContextRef c = UIGraphicsGetCurrentContext();
+
+    // Originalbild zeichnen
+    [image drawInRect:aRect];
+
+    // Farbige Schicht darüber mit Opacity
+    CGFloat r, g, b, a;
+    if ([tintColor getRed:&r green:&g blue:&b alpha:&a]) {
+        UIColor *overlayColor = [UIColor colorWithRed:r green:g blue:b alpha:alpha];
+        CGContextSetFillColorWithColor(c, overlayColor.CGColor);
+        UIRectFill(aRect);
+    }
+
+    UIImage *tintedImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    return tintedImage;
+}
+
 -(UIImage*)scaleToSize:(CGSize)size withImage:(UIImage *)image
 {
     // Delegate zur zentralen Scaling-Methode
@@ -655,6 +687,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     BOOL shouldRasterize = [TiUtils boolValue:[self.proxy valueForKey:@"shouldRasterize"] def:NO];
     id backgroundColor = [self.proxy valueForKey:@"backgroundColor"];
     id tintColor = [self.proxy valueForKey:@"tintColor"];
+    CGFloat tintOpacity = [TiUtils floatValue:[self.proxy valueForKey:@"tintOpacity"] def:0.35f];
 
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
     BOOL calcAverage = NO;
@@ -698,11 +731,12 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 - (void)_applyTintedImage:(UIImage *)image tintColor:(id)tintColor backgroundColor:(id)backgroundColor
     shouldRasterize:(BOOL)shouldRasterize animated:(BOOL)animated animateOnce:(BOOL)animateOnce
 {
-    // Tint Color anwenden
+    // Tint Color anwenden (wie Titanium SDK: Farbtönung, nicht Silhouette!)
     if (tintColor != nil) {
-        UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
+        // iOS 13+: imageWithTintColor:renderingMode: preserves original image with tint overlay
+        UIImage *tintedImage = [image imageWithTintColor:tintColorValue renderingMode:UIImageRenderingModeAlwaysOriginal];
         [self->imageView setImage:tintedImage];
-        [self->imageView setTintColor:[TiUtils colorValue:tintColor].color];
     }
     else {
         [self->imageView setImage:image];
