@@ -717,7 +717,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     BOOL animateOnce = [TiUtils boolValue:[self.proxy valueForKey:@"animateOnce"] def:NO];
     BOOL shouldRasterize = [TiUtils boolValue:[self.proxy valueForKey:@"shouldRasterize"] def:NO];
     id backgroundColor = [self.proxy valueForKey:@"backgroundColor"];
-    id tintColor = [self.proxy valueForKey:@"overlayColor"];
+    id tintColor = [self.proxy valueForKey:@"tintColor"];
     CGFloat tintOpacity = [TiUtils floatValue:[self.proxy valueForKey:@"tintOpacity"] def:0.35f];
 
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
