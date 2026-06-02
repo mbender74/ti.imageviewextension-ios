@@ -271,6 +271,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    BOOL hires = [TiUtils boolValue:[self.proxy valueForKey:@"hires"] def:NO];
    BOOL hasBlur = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO];
    BOOL hasCalcMinMax = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO];
+   BOOL hasNoTransparency = [TiUtils boolValue:[self.proxy valueForUndefinedKey:@"noTransparency"] def:NO] && [self.proxy valueForUndefinedKey:@"backgroundColor"] != nil;
 
    CGSize imageSize = CGSizeMake(TiDimensionCalculateValue(width, 0.0),
        TiDimensionCalculateValue(height, 0.0));
@@ -288,7 +289,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
      return;
    }
 
-   if (hasBlur || hasCalcMinMax) {
+   if (hasBlur || hasCalcMinMax || hasNoTransparency) {
        // Image Processing asynchron im Background
        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
            UIImage *processedImage = image;
@@ -299,6 +300,13 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
            }
            if (hasCalcMinMax) {
                processedImage = [self calcMinMax:processedImage originalSize:originalImageSize];
+           }
+           if (hasNoTransparency) {
+               id backgroundColor = [self.proxy valueForUndefinedKey:@"backgroundColor"];
+               UIColor *bgColor = [[TiUtils colorValue:backgroundColor] _color];
+               processedImage = [self optimizedImageFromImage:processedImage];
+               processedImage = [self imageByReplacingColor:[UIColor colorWithRed:0 green:0 blue:0 alpha:1] withImage:processedImage withMinTolerance:0.0 withMaxTolerance:0.0 withColor:bgColor];
+               processedImage = [self optimizedImageFromImage:processedImage];
            }
            UIImage *imageToUse = [self rotatedImage:processedImage];
            [(TiUIImageViewProxy *)[self proxy] setImageURL:img];
