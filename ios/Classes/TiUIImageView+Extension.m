@@ -49,7 +49,7 @@ static CGColorSpaceRef sharedRGBColorSpace(void) {
 // Helper: ColorSpace releasing in dealloc oder app shutdown
 __attribute__((destructor))
 static void releaseSharedColorSpace(void) {
-    // Wird beim App-Shutdown aufgerufen
+    CGColorSpaceRelease(sharedRGBColorSpace());
 }
 
 @implementation TiUIImageView (Extension)
@@ -182,14 +182,24 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     [[self proxy] replaceValue:[self.proxy valueForKey:@"maxWidth"] forKey:@"cachedMaxWidth" notification:NO];
     [[self proxy] replaceValue:[self.proxy valueForKey:@"maxHeight"] forKey:@"cachedMaxHeight" notification:NO];
 
-    // Event feuern mit den Ziel-Dimensionen
-    NSLog(@"[TiUIImageView+Extension] calcMinMax: firing imageMinMax event width=%.1f height=%.1f (original=%.0fx%.0f, ratio=%.2f)",
-          destImage.size.width, destImage.size.height, originalSize.width, originalSize.height, ratio);
+    // Event-Object vorbereiten
     NSMutableDictionary *eventObject = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                         @(destImage.size.width), @"width",
                                         @(destImage.size.height), @"height",
                                         nil];
-    [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
+
+    // Event auf Main-Thread feuern (Layout-Code im Handler braucht Main-Thread)
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            DebugLog(@"[TiUIImageView+Extension] calcMinMax: firing imageMinMax event width=%.1f height=%.1f (original=%.0fx%.0f, ratio=%.2f)",
+                     destImage.size.width, destImage.size.height, originalSize.width, originalSize.height, ratio);
+            [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
+        });
+    } else {
+        DebugLog(@"[TiUIImageView+Extension] calcMinMax: firing imageMinMax event width=%.1f height=%.1f (original=%.0fx%.0f, ratio=%.2f)",
+                 destImage.size.width, destImage.size.height, originalSize.width, originalSize.height, ratio);
+        [self.proxy fireEvent:@"imageMinMax" withObject:eventObject propagate:NO];
+    }
 
     return destImage;
 }
@@ -245,15 +255,21 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    if (calcMinMaxDone && averageColorDone) {
        NSString *currentImage = [self.proxy valueForKey:@"image"];
        if ([currentImage isKindOfClass:[NSString class]] && [currentImage isEqualToString:[img path]]) {
-           // Prüfen ob sich relevante Properties geändert haben
+           // Properties per Wert vergleichen (nicht per Referenz!)
            BOOL blurredImageChanged = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedBlurredImage"] def:NO];
-           BOOL blurRadiusChanged = [self.proxy valueForKey:@"blurRadius"] != [self.proxy valueForKey:@"cachedBlurRadius"];
+           CGFloat blurRadius = [TiUtils floatValue:[self.proxy valueForKey:@"blurRadius"] def:kDefaultBlurRadius];
+           CGFloat cachedBlurRadius = [TiUtils floatValue:[self.proxy valueForKey:@"cachedBlurRadius"] def:kDefaultBlurRadius];
+           BOOL blurRadiusChanged = (blurRadius != cachedBlurRadius);
            BOOL calcMinMaxChanged = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedCalcMinMax"] def:NO];
-           BOOL maxWidthChanged = [self.proxy valueForKey:@"maxWidth"] != [self.proxy valueForKey:@"cachedMaxWidth"];
-           BOOL maxHeightChanged = [self.proxy valueForKey:@"maxHeight"] != [self.proxy valueForKey:@"cachedMaxHeight"];
+           CGFloat maxWidthVal = [TiUtils floatValue:[self.proxy valueForKey:@"maxWidth"] def:0];
+           CGFloat cachedMaxWidthVal = [TiUtils floatValue:[self.proxy valueForKey:@"cachedMaxWidth"] def:0];
+           BOOL maxWidthChanged = (maxWidthVal != cachedMaxWidthVal);
+           CGFloat maxHeightVal = [TiUtils floatValue:[self.proxy valueForKey:@"maxHeight"] def:0];
+           CGFloat cachedMaxHeightVal = [TiUtils floatValue:[self.proxy valueForKey:@"cachedMaxHeight"] def:0];
+           BOOL maxHeightChanged = (maxHeightVal != cachedMaxHeightVal);
 
            if (!blurredImageChanged && !blurRadiusChanged && !calcMinMaxChanged && !maxWidthChanged && !maxHeightChanged) {
-               NSLog(@"[TiUIImageView+Extension] loadUrl: EARLY EXIT – Cache hit url=%@", [img path]);
+               DebugLog(@"[TiUIImageView+Extension] loadUrl: EARLY EXIT – Cache hit url=%@", [img path]);
                return;
            }
        }
@@ -267,11 +283,15 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
    [self removeAllImagesFromContainer];
 
-   // Properties cachern (KVC-overhead reduzieren)
+   // Properties EINMALIG cachen — vor Background-Dispatch (vermeidet Race Conditions)
    BOOL hires = [TiUtils boolValue:[self.proxy valueForKey:@"hires"] def:NO];
    BOOL hasBlur = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO];
+   CGFloat cachedBlurRadius = [TiUtils floatValue:[self.proxy valueForKey:@"blurRadius"] def:kDefaultBlurRadius];
    BOOL hasCalcMinMax = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO];
+   id cachedMaxWidth = [self.proxy valueForKey:@"maxWidth"];
+   id cachedMaxHeight = [self.proxy valueForKey:@"maxHeight"];
    BOOL hasNoTransparency = [TiUtils boolValue:[self.proxy valueForUndefinedKey:@"noTransparency"] def:NO] && [self.proxy valueForUndefinedKey:@"backgroundColor"] != nil;
+   id cachedBackgroundColor = [self.proxy valueForUndefinedKey:@"backgroundColor"];
 
    CGSize imageSize = CGSizeMake(TiDimensionCalculateValue(width, 0.0),
        TiDimensionCalculateValue(height, 0.0));
@@ -296,14 +316,22 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
            CGSize originalImageSize = image.size;
 
            if (hasBlur) {
+               // blurRadius aus Cache verwenden (nicht neu vom Proxy lesen)
+               [self.proxy replaceValue:@(cachedBlurRadius) forKey:@"blurRadius" notification:NO];
                processedImage = [self blurredImageWithImage:processedImage];
            }
            if (hasCalcMinMax) {
+               // maxWidth/maxHeight aus Cache verwenden
+               if (cachedMaxWidth != nil) {
+                   [self.proxy replaceValue:cachedMaxWidth forKey:@"maxWidth" notification:NO];
+               }
+               if (cachedMaxHeight != nil) {
+                   [self.proxy replaceValue:cachedMaxHeight forKey:@"maxHeight" notification:NO];
+               }
                processedImage = [self calcMinMax:processedImage originalSize:originalImageSize];
            }
            if (hasNoTransparency) {
-               id backgroundColor = [self.proxy valueForUndefinedKey:@"backgroundColor"];
-               UIColor *bgColor = [[TiUtils colorValue:backgroundColor] _color];
+               UIColor *bgColor = [[TiUtils colorValue:cachedBackgroundColor] _color];
                processedImage = [self optimizedImageFromImage:processedImage];
                processedImage = [self imageByReplacingColor:[UIColor colorWithRed:0 green:0 blue:0 alpha:1] withImage:processedImage withMinTolerance:0.0 withMaxTolerance:0.0 withColor:bgColor];
                processedImage = [self optimizedImageFromImage:processedImage];
@@ -712,13 +740,8 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
         return;
     }
 
-    NSLog(@"[TiUIImageView+Extension] setTintedImage: CALLED self=%p image=%p avgColorDone=%@ calcMinMax=%@ avgFired=%d minMaxFired=%d",
-          self,
-          image,
-          [self.proxy valueForUndefinedKey:@"averageColorDone"],
-          [self.proxy valueForKey:@"calcMinMax"],
-          [self averageColorFired],
-          [self imageMinMaxFired]);
+    // imageView sicherstellen dass es existiert (loadUrl Pfad erstellt es nicht!)
+    [self imageView];
 
     // Properties cachieren (KVC-overhead reduzieren)
     BOOL animated = [TiUtils boolValue:[self.proxy valueForKey:@"animated"] def:NO];
@@ -726,7 +749,6 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     BOOL shouldRasterize = [TiUtils boolValue:[self.proxy valueForKey:@"shouldRasterize"] def:NO];
     id backgroundColor = [self.proxy valueForKey:@"backgroundColor"];
     id tintColor = [self.proxy valueForKey:@"tintColor"];
-    CGFloat tintOpacity = [TiUtils floatValue:[self.proxy valueForKey:@"tintOpacity"] def:0.35f];
 
     // Average Color berechnen (wenn Listener vorhanden und noch nicht berechnet)
     BOOL calcAverage = NO;
@@ -850,8 +872,6 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
 - (void)setImage_:(id)arg
 {
- UIImageView *imageview = [self imageView];
-
  // Early-Exit: Gleiches Bild überspringen (verbesserter Vergleich)
  if (arg == nil || [arg isEqual:@""] || [arg isKindOfClass:[NSNull class]]) {
    return;
@@ -863,22 +883,31 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
    BOOL calcMinMaxDone = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMaxDone"] def:NO];
    BOOL averageColorDone = [TiUtils boolValue:[self.proxy valueForKey:@"averageColorDone"] def:YES];
    if ([arg isEqualToString:currentImage] && calcMinMaxDone && averageColorDone) {
-       // Prüfen ob sich relevante Properties geändert haben (Blur, calcMinMax, maxWidth/Height)
+       // Properties per Wert vergleichen (nicht per Referenz!)
        BOOL blurredImageChanged = [TiUtils boolValue:[self.proxy valueForKey:@"blurredImage"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedBlurredImage"] def:NO];
-       BOOL blurRadiusChanged = [self.proxy valueForKey:@"blurRadius"] != [self.proxy valueForKey:@"cachedBlurRadius"];
+       CGFloat blurRadiusVal = [TiUtils floatValue:[self.proxy valueForKey:@"blurRadius"] def:kDefaultBlurRadius];
+       CGFloat cachedBlurRadiusVal = [TiUtils floatValue:[self.proxy valueForKey:@"cachedBlurRadius"] def:kDefaultBlurRadius];
+       BOOL blurRadiusChanged = (blurRadiusVal != cachedBlurRadiusVal);
        BOOL calcMinMaxChanged = [TiUtils boolValue:[self.proxy valueForKey:@"calcMinMax"] def:NO] != [TiUtils boolValue:[self.proxy valueForKey:@"cachedCalcMinMax"] def:NO];
-       BOOL maxWidthChanged = [self.proxy valueForKey:@"maxWidth"] != [self.proxy valueForKey:@"cachedMaxWidth"];
-       BOOL maxHeightChanged = [self.proxy valueForKey:@"maxHeight"] != [self.proxy valueForKey:@"cachedMaxHeight"];
+       CGFloat maxWidthVal = [TiUtils floatValue:[self.proxy valueForKey:@"maxWidth"] def:0];
+       CGFloat cachedMaxWidthVal = [TiUtils floatValue:[self.proxy valueForKey:@"cachedMaxWidth"] def:0];
+       BOOL maxWidthChanged = (maxWidthVal != cachedMaxWidthVal);
+       CGFloat maxHeightVal = [TiUtils floatValue:[self.proxy valueForKey:@"maxHeight"] def:0];
+       CGFloat cachedMaxHeightVal = [TiUtils floatValue:[self.proxy valueForKey:@"cachedMaxHeight"] def:0];
+       BOOL maxHeightChanged = (maxHeightVal != cachedMaxHeightVal);
 
        if (!blurredImageChanged && !blurRadiusChanged && !calcMinMaxChanged && !maxWidthChanged && !maxHeightChanged) {
-           NSLog(@"[TiUIImageView+Extension] setImage_: EARLY EXIT – Cache hit path=%@", arg);
+           DebugLog(@"[TiUIImageView+Extension] setImage_: EARLY EXIT – Cache hit path=%@", arg);
            return;
        }
    }
  }
- // Early-Exit: Wenn dasselbe UIImage-Object
- if ([arg isKindOfClass:[UIImage class]] && [arg isEqual:imageview.image]) {
-   return;
+ // Early-Exit: Wenn dasselbe UIImage-Object (imageView nur bei UIImage-Vergleich erstellen)
+ if ([arg isKindOfClass:[UIImage class]]) {
+     UIImageView *imageview = [self imageView];
+     if ([arg isEqual:imageview.image]) {
+         return;
+     }
  }
 
  // Image hat sich geändert – Flags zurücksetzen für neue Berechnung (ERST NACH Early-Exit!)
@@ -929,14 +958,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
              processedImage = [self optimizedImageFromImage:processedImage];
          }
 
-         // tintColor als Overlay anwenden (nicht Silhouette!) wenn noTransparency aktiv
-         id tintColor = [self.proxy valueForKey:@"tintColor"];
-         if (tintColor != nil) {
-             UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
-             processedImage = [self imageWithColorOverlay:processedImage withColor:tintColorValue];
-         }
-
-         // setTintedImage direkt aufrufen (dispatcht intern auf Main Thread)
+         // setTintedImage direkt aufrufen (dispatcht intern auf Main Thread; tintColor wird dort als Template/Silhouette angewendet)
          [self setTintedImage:processedImage];
      });
  }
@@ -952,7 +974,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
     }
 
    CGSize size = {1, 1};
-   UIGraphicsBeginImageContextWithOptions(size, YES, 0.0);
+   UIGraphicsBeginImageContextWithOptions(size, NO, 0.0); // NO = transparent context (vermeidet Schwarz-Verfälschung bei transparenten Pixeln)
    CGContextRef ctx = UIGraphicsGetCurrentContext();
    CGContextSetInterpolationQuality(ctx, kCGInterpolationMedium);
    [image drawInRect:(CGRect){.size = size} blendMode:kCGBlendModeCopy alpha:1];
@@ -979,7 +1001,7 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 
    dispatch_async(dispatch_get_main_queue(), ^{
         // averageColorDone wurde bereits in setTintedImage: gesetzt
-        NSLog(@"[TiUIImageView+Extension] getAverageColor: firing averageColor event hex=%@", hexColor);
+        DebugLog(@"[TiUIImageView+Extension] getAverageColor: firing averageColor event hex=%@", hexColor);
         [[self proxy] replaceValue:hexColor forKey:@"averageColor" notification:NO];
         // Cache Properties für Cell Reuse (wenn sich Properties ändern, wird neu berechnet)
         [[self proxy] replaceValue:[self.proxy valueForKey:@"blurredImage"] forKey:@"cachedBlurredImage" notification:NO];
