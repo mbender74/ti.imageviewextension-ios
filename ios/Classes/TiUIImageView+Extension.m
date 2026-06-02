@@ -762,11 +762,12 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 - (void)_applyTintedImage:(UIImage *)image tintColor:(id)tintColor backgroundColor:(id)backgroundColor
     shouldRasterize:(BOOL)shouldRasterize animated:(BOOL)animated animateOnce:(BOOL)animateOnce
 {
-    // Tint Color anwenden (Farb-Overlay mit Blend Mode, wie Photoshop "Farbe")
+    // Tint Color anwenden (Silhouette/Template Mode)
     if (tintColor != nil) {
         UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
-        UIImage *tintedImage = [self imageWithColorOverlay:image withColor:tintColorValue];
+        UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
         [self->imageView setImage:tintedImage];
+        [self->imageView setTintColor:tintColorValue];
     }
     else {
         [self->imageView setImage:image];
