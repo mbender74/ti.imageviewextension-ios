@@ -524,10 +524,13 @@ imageView.addEventListener('imageMinMax', function(e) {
 
 ## Changelog
 
-### v1.3.7 (2026-01-21)
+### v1.3.7 (2026-06-02)
 - ✅ Fixed duplicate event firing with TableViewExtension height caching
 - ✅ Flag reset now occurs after early-exit checks
 - ✅ Improved cell reuse compatibility
+- ✅ noTransparency works in both direct image and loadUrl paths
+- ✅ tintColor uses silhouette/template mode (solid color)
+- ✅ noTransparency removes alpha channel, fills with backgroundColor (no blended layers)
 - ✅ Comprehensive documentation update (all properties, events, examples)
 - ✅ Added troubleshooting section
 - ✅ Updated manifest (author, license, minsdk: 13.2.0)
