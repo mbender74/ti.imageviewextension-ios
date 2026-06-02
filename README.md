@@ -528,6 +528,10 @@ imageView.addEventListener('imageMinMax', function(e) {
 - ✅ Fixed duplicate event firing with TableViewExtension height caching
 - ✅ Flag reset now occurs after early-exit checks
 - ✅ Improved cell reuse compatibility
+- ✅ Comprehensive documentation update (all properties, events, examples)
+- ✅ Added troubleshooting section
+- ✅ Updated manifest (author, license, minsdk: 13.2.0)
+- ✅ Example app with 10 feature demonstrations
 
 ### v1.3.6 (2026-01-20)
 - ✅ Early-exit cache with property comparison
