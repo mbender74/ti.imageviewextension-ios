@@ -770,21 +770,11 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 - (void)_applyTintedImage:(UIImage *)image tintColor:(id)tintColor backgroundColor:(id)backgroundColor
     shouldRasterize:(BOOL)shouldRasterize animated:(BOOL)animated animateOnce:(BOOL)animateOnce
 {
-    // Tint Color anwenden
+    // Tint Color anwenden (immer als Overlay, Bild bleibt sichtbar!)
     if (tintColor != nil) {
         UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
-        BOOL hasNoTransparency = [TiUtils boolValue:[self.proxy valueForUndefinedKey:@"noTransparency"] def:NO];
-        
-        if (hasNoTransparency) {
-            // noTransparency: tintColor als Overlay (Bild bleibt sichtbar)
-            UIImage *tintedImage = [self imageWithColorOverlay:image withColor:tintColorValue];
-            [self->imageView setImage:tintedImage];
-        } else {
-            // Standard: tintColor als Silhouette/Template
-            UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-            [self->imageView setImage:tintedImage];
-            [self->imageView setTintColor:tintColorValue];
-        }
+        UIImage *tintedImage = [self imageWithColorOverlay:image withColor:tintColorValue];
+        [self->imageView setImage:tintedImage];
     }
     else {
         [self->imageView setImage:image];
