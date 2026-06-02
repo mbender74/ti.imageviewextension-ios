@@ -770,12 +770,21 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
 - (void)_applyTintedImage:(UIImage *)image tintColor:(id)tintColor backgroundColor:(id)backgroundColor
     shouldRasterize:(BOOL)shouldRasterize animated:(BOOL)animated animateOnce:(BOOL)animateOnce
 {
-    // Tint Color anwenden (Silhouette/Template Mode)
+    // Tint Color anwenden
     if (tintColor != nil) {
         UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
-        UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-        [self->imageView setImage:tintedImage];
-        [self->imageView setTintColor:tintColorValue];
+        BOOL hasNoTransparency = [TiUtils boolValue:[self.proxy valueForUndefinedKey:@"noTransparency"] def:NO];
+        
+        if (hasNoTransparency) {
+            // noTransparency: tintColor als Overlay (Bild bleibt sichtbar)
+            UIImage *tintedImage = [self imageWithColorOverlay:image withColor:tintColorValue];
+            [self->imageView setImage:tintedImage];
+        } else {
+            // Standard: tintColor als Silhouette/Template
+            UIImage *tintedImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+            [self->imageView setImage:tintedImage];
+            [self->imageView setTintColor:tintColorValue];
+        }
     }
     else {
         [self->imageView setImage:image];
@@ -927,6 +936,13 @@ static const char *kImageMinMaxFiredKey = "kImageMinMaxFired";
              processedImage = [self optimizedImageFromImage:processedImage];
              processedImage = [self imageByReplacingColor:[UIColor colorWithRed:0 green:0 blue:0 alpha:1] withImage:processedImage withMinTolerance:0.0 withMaxTolerance:0.0 withColor:bgColor];
              processedImage = [self optimizedImageFromImage:processedImage];
+         }
+
+         // tintColor als Overlay anwenden (nicht Silhouette!) wenn noTransparency aktiv
+         id tintColor = [self.proxy valueForKey:@"tintColor"];
+         if (tintColor != nil) {
+             UIColor *tintColorValue = [[TiUtils colorValue:tintColor] color];
+             processedImage = [self imageWithColorOverlay:processedImage withColor:tintColorValue];
          }
 
          // setTintedImage direkt aufrufen (dispatcht intern auf Main Thread)
