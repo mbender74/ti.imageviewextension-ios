@@ -524,6 +524,17 @@ imageView.addEventListener('imageMinMax', function(e) {
 
 ## Changelog
 
+### v1.3.8 (2026-06-02)
+- ✅ Fixed Cell-Reuse cache: property comparison now uses numeric values (`floatValue`) instead of object references — cache actually works
+- ✅ Race condition fix: properties cached once before background dispatch (blurRadius, maxWidth/Height, backgroundColor) — no more inconsistent processing
+- ✅ Fixed tintColor double application: removed color overlay in `noTransparency` path — tint now only applied as template/silhouette mode
+- ✅ `imageMinMax` event now fires on main thread — safe for layout code in event handlers
+- ✅ Average color: transparent context instead of opaque — no black tint on images with transparency
+- ✅ Fixed invisible images with `blurredImage` + `calcMinMax`: ensure internal imageView is created in `loadUrl` path
+- ✅ Optimized imageView creation: lazy instantiation only when needed (reduces unnecessary allocations)
+- ✅ All `NSLog` statements replaced with `DebugLog` — no console spam in production builds
+- ✅ Removed unused `tintOpacity` variable
+
 ### v1.3.7 (2026-06-02)
 - ✅ Fixed duplicate event firing with TableViewExtension height caching
 - ✅ Flag reset now occurs after early-exit checks

@@ -336,6 +336,17 @@ var imageView = Ti.UI.createImageView({
 
 ## Changelog
 
+### v1.3.8 (2026-06-02)
+- ✅ Fixed Cell-Reuse cache: property comparison now uses numeric values instead of object references
+- ✅ Race condition fix: properties cached once before background dispatch — no inconsistent processing
+- ✅ Fixed tintColor double application in `noTransparency` path — template/silhouette mode only
+- ✅ `imageMinMax` event fires on main thread — safe for layout code in handlers
+- ✅ Average color uses transparent context — no black tint on images with transparency
+- ✅ Fixed invisible images with `blurredImage` + `calcMinMax`: imageView now created in `loadUrl` path
+- ✅ Optimized imageView creation: lazy instantiation only when needed
+- ✅ All `NSLog` replaced with `DebugLog` — no console spam in production
+- ✅ Removed unused `tintOpacity` variable
+
 ### v1.3.7 (2026-06-02)
 - ✅ Fixed duplicate event firing with TableViewExtension height caching
 - ✅ Flag reset now occurs after early-exit checks
